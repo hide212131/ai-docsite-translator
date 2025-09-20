@@ -1,0 +1,162 @@
+# AI翻訳スクリプト 仕様書 (SPEC)
+
+## 1. 概要
+本仕様書は、英語原文のドキュメントサイト（upstream）と日本語翻訳サイト（origin）の差分を検出し、LangChain4j＋Gemini を利用して翻訳し、日本語サイト向けの Pull Request を自動作成するスクリプト（以下「スクリプト」）の詳細仕様を定義する。GitHub Actions での定期実行およびローカル開発環境での検証を両立させる。
+
+## 2. スコープ
+- upstream と origin の差分同期と翻訳処理
+- 翻訳結果のコミットおよび PR 作成の自動化
+- GitHub Actions とローカル開発モードの双方で動作する実行スクリプト群
+
+## 3. 用語定義
+- upstream: 原文（英語）ドキュメントを保持する GitHub リポジトリ。
+- origin: 日本語翻訳ドキュメントを保持する GitHub リポジトリ。
+- 翻訳ブランチ: スクリプトが origin 上に作成する翻訳結果用の作業ブランチ。
+
+## 4. 前提条件と制約
+- upstream と origin のディレクトリ／ファイル構成は完全一致させる。
+- 翻訳ファイル内の行数は原文と一致させ、改行位置も揃える。
+- 文書ファイル（.md, .mdx, .txt, .html）のみ翻訳対象とする。
+- Java 最新 LTS（例: Java 21）を使用し、LangChain4j v1.5.0 以上を採用する。
+- LangChain4j Agents チュートリアル（https://docs.langchain4j.dev/tutorials/agents）に準拠した Agentic アーキテクチャを採用する。
+- LLM は Gemini（API キーは GitHub Actions Secrets に格納）を使用する。
+- ネットワークアクセスや Secrets への参照は、GitHub Actions 上でのみ許可される前提とする。
+
+## 5. 全体アーキテクチャ
+- Java ベースの CLI ツールとして実装。
+- モジュール構成を以下のサブパッケージに分割し、役割ごとに責務を分離する。
+  - `config`: 設定値、環境変数、Secrets 読み込み。
+  - `git`: upstream / origin のクローン、フェッチ、ブランチ操作、差分検出。
+  - `diff`: 未翻訳ファイル特定、差分解析、行数調整（改行のみ判定と挿入／削除ユーティリティ含む）。
+  - `agent`: LangChain4j Agents を用いたタスクオーケストレーションとツール定義。
+  - `translate`: LangChain4j/Gemini を呼び出し、文書翻訳と整形を行う。
+  - `writer`: 翻訳結果の書き込み、行数補正、ファイル保存。
+  - `pr`: PR 作成、本文生成、リンク挿入。
+  - `cli`: エントリーポイント、コマンドライン引数解析、モード制御。
+
+## 6. ワークフロー
+### 6.1 GitHub Actions 実行フロー
+1. スクリプトリポジトリを checkout。
+2. upstream と origin を指定 URL からクローン。
+3. スクリプトを `--mode batch` で実行。
+4. 未翻訳差分を抽出し翻訳。
+5. 翻訳ブランチにコミット、PR を作成。
+6. Actions ログに処理結果サマリを出力。
+
+### 6.2 ローカル開発モード
+- `--mode dev --since <commit>` で指定コミット以前の未翻訳差分のみ翻訳可能にする。
+- ローカル環境で upstream / origin の代替パスを指定できるよう CLI オプションを設ける。
+- Actions 依存の処理（Secrets 読込、PR 作成等）はモックまたは dry-run とする切替機能を提供。
+
+## 7. 機能要件
+### 7.1 入力
+- CLI オプション
+  - `--upstream-url`, `--origin-url`
+  - `--origin-branch` (デフォルト: `main`)
+  - `--translation-branch-template` (デフォルト: `sync-<upstream-short-sha>`)
+  - `--mode` (`batch` | `dev`)
+  - `--since <commit>`（dev モード時のみ有効）
+  - `--dry-run`（PR/Push を抑止）
+- Secrets / 環境変数
+  - `GEMINI_API_KEY`
+  - GitHub Token (`GITHUB_TOKEN`) for PR creation
+
+※ テンプレート内の `<upstream-short-sha>` は、翻訳対象となる最新 upstream コミットの短縮ハッシュ（7 文字想定）に置換する。
+
+### 7.2 処理手順
+1. 設定読込: CLI 引数と環境変数を統合し設定オブジェクト生成。
+2. Agent 初期化: LangChain4j Agents のガイダンスに従い、`DiffAnalyzer` や `TranslationTool` 等をツールとして登録したオーケストレータを構築。
+3. リポジトリ同期: upstream/origin の最新をフェッチ、origin で翻訳ブランチ（`sync-<upstream-short-sha>` 形式、オプションで変更可能）を作成。
+4. 差分解析: upstream の最新コミットから、origin に未反映の文書ファイルを抽出。
+5. 行数補正: 原文と翻訳ファイルの行数が異なる場合、下記の手順で空行を調整する。
+   - `LineStructureAnalyzer` 関数が各行の状態（改行のみか、内容を含むか、連続空行ブロックの範囲など）を抽出し、調整候補のメタデータを作成する。
+   - Analyzer の出力は LLM に渡し、`LineStructureAdjuster` 関数に与えるパラメータ（挿入／削除対象行、操作順序）を算出してもらう。
+   - `LineStructureAdjuster` 関数が算出された計画に従い、指定箇所に改行のみの行を挿入または削除して行数を一致させる。
+6. 翻訳処理:
+   - LangChain4j/Gemini を用いて文書単位で翻訳。
+   - 文意を維持しながらも行数・段落構成を揃える。
+   - 翻訳済み部分とのマージ方針: 新規差分のみ追記または必要箇所の再翻訳。
+   - 原文の軽微修正（誤字等）と判断した差分はスキップ可能とする判定ロジックを実装。
+7. ファイル書き込み: 翻訳結果をorigin側ディレクトリに保存、改行コード・エンコーディングを統一。
+8. コミット: 翻訳ファイル一覧をメッセージに含めてコミット。
+9. PR 作成: PR タイトルと本文を生成し、原文コミットと翻訳コミットのリンクを掲載。
+
+### 7.3 出力
+- 翻訳済みファイル更新
+- origin に作成された翻訳ブランチ
+- PR (dry-run 時は PR 本文ドラフトを標準出力へ)
+- ログ: 処理結果の詳細、翻訳対象ファイル一覧、エラー情報
+
+## 8. 非機能要件
+- 冪等性: 同じ upstream 状態で再実行しても差分がない場合は何もコミットしない。
+- 拡張性: 対応ファイル拡張子を設定で追加可能にする。
+- 信頼性: 行数不一致や翻訳 API エラー発生時に処理を停止し、詳細ログを出力。
+- パフォーマンス: 大量ファイルでも翻訳対象を差分に限定し、並列翻訳は設定で制御。
+- ロギング: INFO レベルで主要ステップ、DEBUG レベルで API リクエストとレスポンス要約を記録。
+
+## 9. データモデル / 主なクラス
+- `AppConfig`: CLI 引数・環境変数から生成される設定値。
+- `RepositoryManager`: upstream / origin の git 操作をラップ。
+- `DiffAnalyzer`: 差分抽出、ファイル状態判定。
+- `LineAligner`: `LineStructureAnalyzer`（改行状況の計測）と `LineStructureAdjuster`（改行挿入・削除の実行）を提供し、Analyzer の結果を LLM に渡して Adjuster パラメータを導出する。
+- `Translator`: LangChain4j/Gemini を呼び出し翻訳結果を返却。
+- `TranslationMerger`: 既存翻訳への反映ロジックを担当。
+- `CommitService`: コミット/ブランチ操作。
+- `PullRequestService`: PR 作成 API 呼び出し。
+- `Logger`: 標準ログ仕組み（SLF4J 等）で記録。
+
+## 10. 外部インターフェース
+- GitHub REST API / GraphQL API (PR 作成、リポジトリ操作) — `GITHUB_TOKEN`
+- Gemini API (LangChain4j 経由)
+- ローカルファイルシステム（翻訳ファイル出力）
+
+## 11. 設定と Secrets
+| 項目 | 説明 | 必須 | 既定値 |
+| --- | --- | --- | --- |
+| `GEMINI_API_KEY` | Gemini API キー | 必須 | なし |
+| `GITHUB_TOKEN` | PR 作成・push 用 Token | 必須 | なし |
+| `TRANSLATION_BRANCH_TEMPLATE` | 翻訳ブランチ名テンプレート | 任意 | `sync-<upstream-short-sha>` |
+| `TRANSLATION_FILE_EXTENSIONS` | 翻訳対象拡張子 | 任意 | `.md,.mdx,.txt,.html` |
+| `MAX_FILES_PER_RUN` | 1 回の処理で翻訳する最大ファイル数 | 任意 | 無制限 |
+
+## 12. エラーハンドリング
+- Git 操作失敗: リトライ後に致命的エラーとして終了。
+- 翻訳 API エラー: エラー内容を記録し、対象ファイルはスキップして処理継続、最後に失敗一覧を出力。
+- 行数整合性エラー: 翻訳結果を破棄し、開発者向けに手動介入を促す。
+- PR 作成失敗: 詳細ログを出力し、dry-run モードで再実行できるよう終了コードで通知。
+
+## 13. 開発モード（dev）要求
+- `--mode dev` 時は GitHub Actions 依存機能を無効化し、CLI から指定したローカルパスを使用可能とする。
+- `--since <commit>` で指定コミット以前の未翻訳差分のみ処理。
+- 翻訳対象ファイル数を制限するオプション（例: `--limit 5`）を提供。
+- 翻訳結果と PR 本文テンプレートを標準出力へプレビュー。
+
+## 14. ログ出力フォーマット
+- JSON 形式とテキスト形式の切替をサポート（デフォルト: テキスト）。
+- 主要イベント: リポジトリ同期開始/終了、差分件数、翻訳 API 呼出時間、コミット ID、PR URL。
+
+## 15. テスト戦略
+- Unit Test: 各サービスクラス（DiffAnalyzer, LineAligner, Translator ラッパー）を対象。
+- Integration Test: モックリポジトリを用いた end-to-end テスト（翻訳 API はモック）。
+- ローカル自動テストスクリプト: dev モードでサンプル差分を翻訳し、結果を検証するサンプルを提供。
+- GitHub Actions CI: ビルド、Unit Test 実行、静的解析（SpotBugs 等）を行うワークフローを用意。
+
+## 16. PR 作成仕様
+- 翻訳ブランチ名: `sync-<upstream-short-sha>` の形式（PR タイトルと揃える）。
+- PR タイトル: `docs: sync-<upstream-short-sha>` の形式。
+- PR 本文テンプレート:
+  - 原文コミットリンク (upstream)
+  - 翻訳コミットリンク (origin 翻訳ブランチ)
+  - 翻訳対象ファイル一覧 (箇条書き)
+  - 注意事項（レビュー観点、翻訳方針）
+- リンク生成時は GitHub の完全 URL（`https://github.com/<owner>/<repo>/commit/<sha>`）を使用。
+
+## 17. セキュリティ
+- Secrets は GitHub Actions 上のみ参照し、ログに出力しない。
+- ローカル実行時は `.env` ファイル等の秘密情報読込に対応しつつ、リポジトリにコミットしない運用を明記。
+- API 呼び出し時に TLS/HTTPS を使用。
+
+## 18. 今後の拡張検討事項
+- DeepL 等他翻訳エンジンとのフェイルオーバー対応。
+- 翻訳レビュー支援（差分ハイライト、コメント自動生成）。
+- 翻訳品質評価の自動化。
