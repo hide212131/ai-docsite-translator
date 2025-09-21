@@ -5,6 +5,7 @@ import ai.docsite.translator.config.Config;
 import ai.docsite.translator.config.ConfigLoader;
 import ai.docsite.translator.config.SystemEnvironmentReader;
 import ai.docsite.translator.diff.DiffAnalyzer;
+import ai.docsite.translator.git.GitWorkflowResult;
 import ai.docsite.translator.git.GitWorkflowService;
 import ai.docsite.translator.translate.TranslationService;
 import org.slf4j.Logger;
@@ -59,7 +60,12 @@ public final class CliApplication {
         LOGGER.info("Running in {} mode (dryRun={}): upstream={} origin={}",
                 config.mode(), config.dryRun(), config.upstreamUrl(), config.originUrl());
 
-        gitWorkflowService.initializeRepositories();
+        GitWorkflowResult workflowResult = gitWorkflowService.prepareSyncBranch(config);
+        if (!workflowResult.translationBranch().isEmpty()) {
+            LOGGER.info("Prepared translation branch {} targeting {}", workflowResult.translationBranch(), workflowResult.targetCommitShortSha());
+        } else {
+            LOGGER.info("Repositories already synchronized with upstream");
+        }
         agentOrchestrator.run();
         return 0;
     }

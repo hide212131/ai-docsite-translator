@@ -17,7 +17,6 @@ public class AgentOrchestrator {
     }
 
     public void run() {
-        diffAnalyzer.analyze();
         translationService.translateAll();
     }
 }
