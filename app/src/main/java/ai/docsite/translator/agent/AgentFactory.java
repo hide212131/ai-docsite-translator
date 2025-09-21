@@ -10,8 +10,8 @@ import ai.docsite.translator.pr.PullRequestService;
 import ai.docsite.translator.translate.TranslationService;
 import ai.docsite.translator.writer.LineStructureAdjuster;
 import ai.docsite.translator.writer.LineStructureAnalyzer;
+import dev.langchain4j.agentic.AgenticServices;
 import dev.langchain4j.model.chat.ChatModel;
-import dev.langchain4j.service.AiServices;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -49,7 +49,7 @@ public class AgentFactory {
         tools.add(new TranslationTool(translationService, workflowResult.diffMetadata()));
         tools.add(new PullRequestTool(pullRequestService, workflowResult));
 
-        return AiServices.builder(TranslationAgent.class)
+        return AgenticServices.agentBuilder(TranslationAgent.class)
                 .chatModel(chatModel)
                 .tools(tools.toArray())
                 .build();

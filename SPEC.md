@@ -67,26 +67,25 @@
   - `--mode` (`batch` | `dev`)
   - `--since <commit>`（dev モード時のみ有効）
   - `--dry-run`（PR/Push を抑止）
+  - `--translation-mode` (`production` | `dry-run` | `mock`) — 翻訳パイプラインの実行モード切替
 - Secrets / 環境変数
   - `GEMINI_API_KEY`
   - GitHub Token (`GITHUB_TOKEN`) for PR creation
   - `TRANSLATION_TARGET_SHA`（任意、dev/テスト向けに短縮コミットハッシュを指定）
+  - `TRANSLATION_MODE`（任意、CLI 未指定時の翻訳モード既定値）
 
 ※ テンプレート内の `<upstream-short-sha>` は、翻訳対象となる最新 upstream コミットの短縮ハッシュ（7 文字想定）に置換する。
 
 ### 7.2 処理手順
 1. 設定読込: CLI 引数と環境変数を統合し設定オブジェクト生成。
-2. Agent 初期化: LangChain4j Agents のガイダンスに従い、`DiffAnalyzer` や `TranslationTool` 等をツールとして登録したオーケストレータを構築。
+2. Agent 初期化: LangChain4j Agents チュートリアル準拠で、`@Agent` を付与した翻訳オーケストレーターインターフェースを定義し、`AgenticServices.agentBuilder` で `DiffTool` / `TranslationTool` / `LineStructureAdjusterTool` / `PullRequestTool` 等を束ねたエージェントを生成する。
 3. リポジトリ同期: upstream/origin の最新をフェッチし、origin の `main` から `sync-<upstream-short-sha>` 形式（オプションで変更可能）の翻訳ブランチを作成する。
 4. 未翻訳コミット解析: upstream/main のマージ履歴を走査して origin 未反映コミットを抽出し、対象コミットの短縮ハッシュをブランチ名・PR 情報に反映する。dev モードでは `--since` や明示したコミット指定を優先し、`TRANSLATION_TARGET_SHA` が設定されている場合はその短縮ハッシュを優先ターゲットとして処理する。
 5. upstream マージとファイル分類: 翻訳ブランチへ upstream/main を強制マージし、コンフリクトが生じてもマージコミットを生成する。マージ後の更新ファイルを a/b/c 区分（新規文書、既存文書の追記・再翻訳、非文書）に分類し、文書ファイルのみ差分解析キューへ投入する。
-6. 行数補正: 原文と翻訳ファイルの行数が異なる場合、下記の手順で空行を調整する。
-   - `LineStructureAnalyzer` 関数が各行の状態（改行のみか、内容を含むか、連続空行ブロックの範囲など）を抽出し、調整候補のメタデータを作成する。
-   - Analyzer の出力は LLM に渡し、`LineStructureAdjuster` 関数に与えるパラメータ（挿入／削除対象行、操作順序）を算出してもらう。
-   - `LineStructureAdjuster` 関数が算出された計画に従い、指定箇所に改行のみの行を挿入または削除して行数を一致させる。
+6. 行数補正: 原文と翻訳ファイルの行数が異なる場合、`LineStructureAnalyzer` が空行／ホワイトスペース／コンテンツ行の連続区間を抽出し、`LineStructureAdjuster` がそのメタデータを基に不足行を補完して行数を一致させる。将来的に LLM ベースの調整へ拡張できるよう、Analyzer→Adjuster の責務を分離する。
 7. 翻訳処理:
-   - LangChain4j/Gemini を用いて文書単位で翻訳。
-   - 文意を維持しながらも行数・段落構成を揃える。
+   - `TranslatorFactory` が `TranslationMode` に応じてプロダクション／ドライラン／モックの訳出パスを選択し、LangChain4j/Gemini 実装を差し替え可能にする。
+   - `TranslationTask` 単位で翻訳セグメントを生成し、`LineStructureFormatter` で行構造を整えた上で既存訳へマージする。
    - 翻訳済み部分とのマージ方針: 新規差分のみ追記または必要箇所の再翻訳。
    - 原文の軽微修正（誤字等）と判断した差分はスキップ可能とする判定ロジックを実装。
 8. ファイル書き込み: 翻訳結果をorigin側ディレクトリに保存、改行コード・エンコーディングを統一。
@@ -111,8 +110,8 @@
 - `RepositoryManager`: upstream / origin の git 操作をラップ。
 - `DiffAnalyzer`: 差分抽出、ファイル状態判定。
 - `LineAligner`: `LineStructureAnalyzer`（改行状況の計測）と `LineStructureAdjuster`（改行挿入・削除の実行）を提供し、Analyzer の結果を LLM に渡して Adjuster パラメータを導出する。
-- `Translator`: LangChain4j/Gemini を呼び出し翻訳結果を返却。
-- `TranslationMerger`: 既存翻訳への反映ロジックを担当。
+- `TranslationService` / `TranslatorFactory` / `Translator`: LangChain4j/Gemini をラップし、モードごとの翻訳処理と行構造整形 (`LineStructureFormatter`) を担う。
+- `TranslationTask` / `TranslationSegment`: 翻訳対象ドキュメントと差分セグメントを表現し、既存訳へのマージと差分限定翻訳を制御。
 - `CommitService`: コミット/ブランチ操作。
 - `PullRequestService`: PR 作成 API 呼び出し。
 - `Logger`: 標準ログ仕組み（SLF4J 等）で記録。
