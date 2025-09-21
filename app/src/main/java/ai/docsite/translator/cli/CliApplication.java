@@ -13,6 +13,7 @@ import ai.docsite.translator.pr.PullRequestComposer;
 import ai.docsite.translator.pr.PullRequestService;
 import ai.docsite.translator.translate.TranslationService;
 import ai.docsite.translator.writer.DefaultLineStructureAdjuster;
+import ai.docsite.translator.writer.DefaultLineStructureAnalyzer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import picocli.CommandLine;
@@ -31,7 +32,8 @@ public final class CliApplication {
     public CliApplication() {
         TranslationService translationService = new TranslationService();
         PullRequestService pullRequestService = new PullRequestService(new PullRequestComposer());
-        AgentFactory agentFactory = new AgentFactory(new SimpleRoutingChatModel(), translationService, pullRequestService, new DefaultLineStructureAdjuster());
+        AgentFactory agentFactory = new AgentFactory(new SimpleRoutingChatModel(), translationService, pullRequestService,
+                new DefaultLineStructureAnalyzer(), new DefaultLineStructureAdjuster());
 
         this.configLoader = new ConfigLoader(new SystemEnvironmentReader());
         this.gitWorkflowService = new GitWorkflowService();

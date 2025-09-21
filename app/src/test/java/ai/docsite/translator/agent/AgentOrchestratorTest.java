@@ -15,6 +15,7 @@ import ai.docsite.translator.pr.PullRequestService.PullRequestDraft;
 import ai.docsite.translator.translate.TranslationService;
 import ai.docsite.translator.translate.TranslationService.TranslationSummary;
 import ai.docsite.translator.writer.DefaultLineStructureAdjuster;
+import ai.docsite.translator.writer.DefaultLineStructureAnalyzer;
 import java.net.URI;
 import java.nio.file.Path;
 import java.util.List;
@@ -33,7 +34,8 @@ class AgentOrchestratorTest {
     void setUp() {
         translationService = new TranslationServiceSpy();
         pullRequestService = new PullRequestServiceSpy();
-        AgentFactory agentFactory = new AgentFactory(new SimpleRoutingChatModel(), translationService, pullRequestService, new DefaultLineStructureAdjuster());
+        AgentFactory agentFactory = new AgentFactory(new SimpleRoutingChatModel(), translationService, pullRequestService,
+                new DefaultLineStructureAnalyzer(), new DefaultLineStructureAdjuster());
         orchestrator = new AgentOrchestrator(agentFactory, translationService, pullRequestService);
     }
 

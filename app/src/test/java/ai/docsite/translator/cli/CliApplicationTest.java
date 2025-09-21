@@ -16,6 +16,7 @@ import ai.docsite.translator.pr.PullRequestComposer;
 import ai.docsite.translator.pr.PullRequestService;
 import ai.docsite.translator.translate.TranslationService;
 import ai.docsite.translator.writer.DefaultLineStructureAdjuster;
+import ai.docsite.translator.writer.DefaultLineStructureAnalyzer;
 import java.net.URI;
 import java.nio.file.Path;
 import java.util.Optional;
@@ -86,7 +87,8 @@ class CliApplicationTest {
         }
 
         private AgentOrchestratorStub(TranslationService translationService, PullRequestService pullRequestService) {
-            super(new AgentFactory(new SimpleRoutingChatModel(), translationService, pullRequestService, new DefaultLineStructureAdjuster()),
+            super(new AgentFactory(new SimpleRoutingChatModel(), translationService, pullRequestService,
+                    new DefaultLineStructureAnalyzer(), new DefaultLineStructureAdjuster()),
                     translationService,
                     pullRequestService);
         }

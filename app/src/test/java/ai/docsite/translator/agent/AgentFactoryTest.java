@@ -6,6 +6,7 @@ import ai.docsite.translator.pr.PullRequestComposer;
 import ai.docsite.translator.pr.PullRequestService;
 import ai.docsite.translator.translate.TranslationService;
 import ai.docsite.translator.writer.DefaultLineStructureAdjuster;
+import ai.docsite.translator.writer.DefaultLineStructureAnalyzer;
 import java.util.Set;
 import org.junit.jupiter.api.Test;
 
@@ -16,6 +17,7 @@ class AgentFactoryTest {
         AgentFactory factory = new AgentFactory(new SimpleRoutingChatModel(),
                 new TranslationService(),
                 new PullRequestService(new PullRequestComposer()),
+                new DefaultLineStructureAnalyzer(),
                 new DefaultLineStructureAdjuster());
 
         assertThat(factory.registeredToolTypes())
