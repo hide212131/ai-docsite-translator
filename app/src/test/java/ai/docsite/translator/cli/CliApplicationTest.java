@@ -10,6 +10,7 @@ import ai.docsite.translator.config.Config;
 import ai.docsite.translator.config.ConfigLoader;
 import ai.docsite.translator.config.Mode;
 import ai.docsite.translator.config.Secrets;
+import ai.docsite.translator.translate.TranslationMode;
 import ai.docsite.translator.git.GitWorkflowResult;
 import ai.docsite.translator.git.GitWorkflowService;
 import ai.docsite.translator.pr.PullRequestComposer;
@@ -33,6 +34,7 @@ class CliApplicationTest {
                 "sync-<upstream-short-sha>",
                 Optional.empty(),
                 true,
+                TranslationMode.DRY_RUN,
                 new Secrets(Optional.empty(), Optional.empty()),
                 Optional.empty());
 

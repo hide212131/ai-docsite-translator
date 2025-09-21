@@ -12,8 +12,10 @@ import ai.docsite.translator.git.GitWorkflowResult;
 import ai.docsite.translator.pr.PullRequestComposer;
 import ai.docsite.translator.pr.PullRequestService;
 import ai.docsite.translator.pr.PullRequestService.PullRequestDraft;
+import ai.docsite.translator.translate.TranslationMode;
+import ai.docsite.translator.translate.TranslationOutcome;
 import ai.docsite.translator.translate.TranslationService;
-import ai.docsite.translator.translate.TranslationService.TranslationSummary;
+import ai.docsite.translator.translate.TranslationTask;
 import ai.docsite.translator.writer.DefaultLineStructureAdjuster;
 import ai.docsite.translator.writer.DefaultLineStructureAnalyzer;
 import java.net.URI;
@@ -49,6 +51,7 @@ class AgentOrchestratorTest {
         assertThat(result.translationTriggered()).isTrue();
         assertThat(result.pullRequestDraftCreated()).isFalse();
         assertThat(translationService.invocations).isEqualTo(1);
+        assertThat(translationService.lastMode).isEqualTo(TranslationMode.PRODUCTION);
         assertThat(pullRequestService.invocations).isZero();
     }
 
@@ -73,6 +76,7 @@ class AgentOrchestratorTest {
                 "sync-<upstream-short-sha>",
                 Optional.empty(),
                 dryRun,
+                dryRun ? TranslationMode.DRY_RUN : TranslationMode.PRODUCTION,
                 new Secrets(Optional.empty(), Optional.empty()),
                 Optional.empty());
     }
@@ -86,11 +90,13 @@ class AgentOrchestratorTest {
 
     private static final class TranslationServiceSpy extends TranslationService {
         private int invocations;
+        private TranslationMode lastMode;
 
         @Override
-        public TranslationSummary translateAll(DiffMetadata metadata) {
+        public TranslationOutcome translate(List<TranslationTask> tasks, TranslationMode mode) {
             invocations++;
-            return super.translateAll(metadata);
+            lastMode = mode;
+            return super.translate(tasks, mode);
         }
     }
 

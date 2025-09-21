@@ -1,6 +1,7 @@
 package ai.docsite.translator.cli;
 
 import ai.docsite.translator.config.Mode;
+import ai.docsite.translator.translate.TranslationMode;
 import java.net.URI;
 import picocli.CommandLine;
 
@@ -28,6 +29,9 @@ public class CliArguments {
     @CommandLine.Option(names = "--dry-run", description = "Perform a dry run without pushing or creating PRs")
     private boolean dryRun;
 
+    @CommandLine.Option(names = "--translation-mode", description = "Translation execution mode: production, dry-run, or mock", converter = TranslationModeConverter.class)
+    private TranslationMode translationMode;
+
     public Mode mode() {
         return mode;
     }
@@ -54,5 +58,9 @@ public class CliArguments {
 
     public boolean dryRun() {
         return dryRun;
+    }
+
+    public TranslationMode translationMode() {
+        return translationMode;
     }
 }

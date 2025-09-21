@@ -1,5 +1,6 @@
 package ai.docsite.translator.config;
 
+import ai.docsite.translator.translate.TranslationMode;
 import java.net.URI;
 import java.util.Objects;
 import java.util.Optional;
@@ -15,6 +16,7 @@ public record Config(
         String translationBranchTemplate,
         Optional<String> since,
         boolean dryRun,
+        TranslationMode translationMode,
         Secrets secrets,
         Optional<String> translationTargetSha
 ) {
@@ -31,6 +33,7 @@ public record Config(
             throw new IllegalArgumentException("translationBranchTemplate must contain " + DEFAULT_TEMPLATE_TOKEN);
         }
         since = since == null ? Optional.empty() : since;
+        translationMode = Objects.requireNonNull(translationMode, "translationMode");
         secrets = Objects.requireNonNull(secrets, "secrets");
         translationTargetSha = translationTargetSha == null ? Optional.empty() : translationTargetSha;
         if (mode == Mode.BATCH && since.isPresent()) {

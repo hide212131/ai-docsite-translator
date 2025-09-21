@@ -6,6 +6,7 @@ import ai.docsite.translator.pr.PullRequestService;
 import ai.docsite.translator.translate.TranslationService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import java.util.Collections;
 
 /**
  * Orchestrates the LangChain4j agent execution and interprets its decisions.
@@ -42,7 +43,7 @@ public class AgentOrchestrator {
         boolean pullRequestDraftCreated = false;
 
         if (shouldTranslate) {
-            translationService.translateAll(workflowResult.diffMetadata());
+            translationService.translate(Collections.emptyList(), config.translationMode());
             translationTriggered = true;
         } else {
             LOGGER.info("Agent plan requested skipping translation step");

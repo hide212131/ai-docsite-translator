@@ -20,23 +20,40 @@ public class DefaultLineStructureAdjuster implements LineStructureAdjuster {
 
         List<String> adjusted = new ArrayList<>(Collections.nCopies(analysis.totalLines(), ""));
         int translationCursor = 0;
+        int contentLineCount = analysis.segments().stream()
+                .filter(segment -> segment.type() == LineType.CONTENT)
+                .mapToInt(LineSegment::length)
+                .sum();
+        boolean translationCoversAllLines = translation.size() == analysis.totalLines();
+        boolean translationContentOnly = translation.size() == contentLineCount;
 
         for (LineSegment segment : analysis.segments()) {
             for (int i = 0; i < segment.length(); i++) {
                 int position = segment.startIndex() + i;
+                String candidate = "";
+                if (segment.type() == LineType.CONTENT || (!translationContentOnly && translationCoversAllLines)) {
+                    if (translationCursor < translation.size()) {
+                        candidate = translation.get(translationCursor);
+                    }
+                }
                 switch (segment.type()) {
                     case CONTENT -> {
-                        String value = translationCursor < translation.size() ? translation.get(translationCursor) : "";
-                        adjusted.set(position, value);
-                        if (translationCursor < translation.size()) {
-                            translationCursor++;
-                        }
+                        adjusted.set(position, candidate);
                     }
                     case WHITESPACE -> {
                         String value = position < source.size() ? source.get(position) : "";
                         adjusted.set(position, value.isEmpty() ? " " : value);
                     }
                     case EMPTY -> adjusted.set(position, "");
+                }
+                if (segment.type() == LineType.CONTENT) {
+                    if (translationCursor < translation.size()) {
+                        translationCursor++;
+                    }
+                } else if (!translationContentOnly && translationCoversAllLines) {
+                    if (translationCursor < translation.size()) {
+                        translationCursor++;
+                    }
                 }
             }
         }

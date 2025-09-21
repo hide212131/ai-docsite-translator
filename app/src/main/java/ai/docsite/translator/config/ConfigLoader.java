@@ -1,6 +1,7 @@
 package ai.docsite.translator.config;
 
 import ai.docsite.translator.cli.CliArguments;
+import ai.docsite.translator.translate.TranslationMode;
 import java.net.URI;
 import java.util.Objects;
 import java.util.Optional;
@@ -20,6 +21,7 @@ public class ConfigLoader {
     static final String ENV_GEMINI_API_KEY = "GEMINI_API_KEY";
     static final String ENV_GITHUB_TOKEN = "GITHUB_TOKEN";
     static final String ENV_TRANSLATION_TARGET_SHA = "TRANSLATION_TARGET_SHA";
+    static final String ENV_TRANSLATION_MODE = "TRANSLATION_MODE";
 
     private static final String DEFAULT_ORIGIN_BRANCH = "main";
     private static final String DEFAULT_BRANCH_TEMPLATE = "sync-<upstream-short-sha>";
@@ -34,6 +36,7 @@ public class ConfigLoader {
         Objects.requireNonNull(arguments, "arguments");
         Mode mode = resolveMode(arguments);
         boolean dryRun = resolveDryRun(arguments);
+        TranslationMode translationMode = resolveTranslationMode(arguments, dryRun);
 
         URI upstreamUrl = resolveUri(arguments.upstreamUrl(), ENV_UPSTREAM_URL, "upstream repository url must be provided");
         URI originUrl = resolveUri(arguments.originUrl(), ENV_ORIGIN_URL, "origin repository url must be provided");
@@ -61,7 +64,7 @@ public class ConfigLoader {
 
         Secrets secrets = new Secrets(geminiApiKey, githubToken);
 
-        return new Config(mode, upstreamUrl, originUrl, originBranch, translationBranchTemplate, since, dryRun, secrets, translationTargetSha);
+        return new Config(mode, upstreamUrl, originUrl, originBranch, translationBranchTemplate, since, dryRun, translationMode, secrets, translationTargetSha);
     }
 
     private Mode resolveMode(CliArguments arguments) {
@@ -82,6 +85,16 @@ public class ConfigLoader {
                 .map(String::trim)
                 .map(value -> value.equalsIgnoreCase("true") || value.equals("1"))
                 .orElse(false);
+    }
+
+    private TranslationMode resolveTranslationMode(CliArguments arguments, boolean dryRun) {
+        TranslationMode cliMode = arguments.translationMode();
+        if (cliMode != null) {
+            return cliMode;
+        }
+        return environmentReader.get(ENV_TRANSLATION_MODE)
+                .map(TranslationMode::from)
+                .orElse(dryRun ? TranslationMode.DRY_RUN : TranslationMode.PRODUCTION);
     }
 
     private URI resolveUri(URI cliValue, String envKey, String errorMessage) {

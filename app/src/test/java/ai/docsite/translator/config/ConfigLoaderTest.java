@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.catchThrowable;
 
 import ai.docsite.translator.cli.CliArguments;
+import ai.docsite.translator.translate.TranslationMode;
 import java.net.URI;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -34,6 +35,7 @@ class ConfigLoaderTest {
         assertThat(config.translationBranchTemplate()).isEqualTo("custom-sync-<upstream-short-sha>");
         assertThat(config.since()).contains("abc123");
         assertThat(config.dryRun()).isTrue();
+        assertThat(config.translationMode()).isEqualTo(TranslationMode.DRY_RUN);
         assertThat(config.secrets().geminiApiKey()).isEmpty();
         assertThat(config.secrets().githubToken()).isEmpty();
     }
@@ -57,6 +59,7 @@ class ConfigLoaderTest {
         assertThat(config.upstreamUrl()).isEqualTo(URI.create("https://example.com/up.git"));
         assertThat(config.originBranch()).isEqualTo("release");
         assertThat(config.translationBranchTemplate()).isEqualTo("sync-<upstream-short-sha>");
+        assertThat(config.translationMode()).isEqualTo(TranslationMode.PRODUCTION);
         assertThat(config.secrets().geminiApiKey()).contains("gemini-key");
         assertThat(config.secrets().githubToken()).contains("github-token");
     }
@@ -72,6 +75,7 @@ class ConfigLoaderTest {
         Config config = new ConfigLoader(environmentReader).load(cliArguments);
 
         assertThat(config.dryRun()).isTrue();
+        assertThat(config.translationMode()).isEqualTo(TranslationMode.DRY_RUN);
         assertThat(environmentReader.requestedKeys()).doesNotContain(ConfigLoader.ENV_GEMINI_API_KEY, ConfigLoader.ENV_GITHUB_TOKEN);
     }
 

@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import ai.docsite.translator.config.Config;
 import ai.docsite.translator.config.Mode;
 import ai.docsite.translator.config.Secrets;
+import ai.docsite.translator.translate.TranslationMode;
 import ai.docsite.translator.diff.ChangeCategory;
 import ai.docsite.translator.diff.DiffAnalyzer;
 import ai.docsite.translator.diff.FileChange;
@@ -66,6 +67,7 @@ class GitWorkflowServiceTest {
                 "sync-<upstream-short-sha>",
                 Optional.empty(),
                 true,
+                TranslationMode.DRY_RUN,
                 new Secrets(Optional.empty(), Optional.empty()),
                 translationTargetSha);
     }
