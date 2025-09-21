@@ -1,35 +1,47 @@
 package ai.docsite.translator.config;
 
+import java.net.URI;
 import java.util.Objects;
+import java.util.Optional;
 
 /**
- * Placeholder configuration object that will aggregate CLI args and environment settings.
+ * Immutable representation of the runtime configuration assembled from CLI arguments and environment values.
  */
-public final class Config {
-    private final String mode;
+public record Config(
+        Mode mode,
+        URI upstreamUrl,
+        URI originUrl,
+        String originBranch,
+        String translationBranchTemplate,
+        Optional<String> since,
+        boolean dryRun,
+        Secrets secrets,
+        Optional<String> translationTargetSha
+) {
 
-    private Config(Builder builder) {
-        this.mode = builder.mode;
-    }
+    private static final String DEFAULT_TEMPLATE_TOKEN = "<upstream-short-sha>";
 
-    public String mode() {
-        return mode;
-    }
-
-    public static Builder builder() {
-        return new Builder();
-    }
-
-    public static final class Builder {
-        private String mode = "dev";
-
-        public Builder mode(String mode) {
-            this.mode = Objects.requireNonNull(mode);
-            return this;
+    public Config {
+        Objects.requireNonNull(mode, "mode");
+        Objects.requireNonNull(upstreamUrl, "upstreamUrl");
+        Objects.requireNonNull(originUrl, "originUrl");
+        originBranch = requireNonBlank(originBranch, "originBranch");
+        translationBranchTemplate = requireNonBlank(translationBranchTemplate, "translationBranchTemplate");
+        if (!translationBranchTemplate.contains(DEFAULT_TEMPLATE_TOKEN)) {
+            throw new IllegalArgumentException("translationBranchTemplate must contain " + DEFAULT_TEMPLATE_TOKEN);
         }
-
-        public Config build() {
-            return new Config(this);
+        since = since == null ? Optional.empty() : since;
+        secrets = Objects.requireNonNull(secrets, "secrets");
+        translationTargetSha = translationTargetSha == null ? Optional.empty() : translationTargetSha;
+        if (mode == Mode.BATCH && since.isPresent()) {
+            throw new IllegalArgumentException("--since can only be used in dev mode");
         }
+    }
+
+    private static String requireNonBlank(String value, String fieldName) {
+        if (value == null || value.isBlank()) {
+            throw new IllegalArgumentException(fieldName + " must not be blank");
+        }
+        return value;
     }
 }
