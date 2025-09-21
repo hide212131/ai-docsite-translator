@@ -19,6 +19,7 @@ repositories {
 dependencies {
     implementation libs.langchain4j
     implementation libs.langchain4j.google.ai
+    implementation libs.langchain4j.agentic
     implementation libs.vertexai
     implementation libs.picocli
     implementation libs.slf4j.api

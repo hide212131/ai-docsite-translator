@@ -2,15 +2,20 @@ package ai.docsite.translator.cli;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import ai.docsite.translator.agent.AgentFactory;
 import ai.docsite.translator.agent.AgentOrchestrator;
+import ai.docsite.translator.agent.AgentRunResult;
+import ai.docsite.translator.agent.SimpleRoutingChatModel;
 import ai.docsite.translator.config.Config;
 import ai.docsite.translator.config.ConfigLoader;
 import ai.docsite.translator.config.Mode;
 import ai.docsite.translator.config.Secrets;
-import ai.docsite.translator.diff.DiffMetadata;
 import ai.docsite.translator.git.GitWorkflowResult;
 import ai.docsite.translator.git.GitWorkflowService;
+import ai.docsite.translator.pr.PullRequestComposer;
+import ai.docsite.translator.pr.PullRequestService;
 import ai.docsite.translator.translate.TranslationService;
+import ai.docsite.translator.writer.DefaultLineStructureAdjuster;
 import java.net.URI;
 import java.nio.file.Path;
 import java.util.Optional;
@@ -31,10 +36,11 @@ class CliApplicationTest {
                 Optional.empty());
 
         RecordingGitWorkflowService gitWorkflowService = new RecordingGitWorkflowService();
+        AgentOrchestratorStub orchestrator = new AgentOrchestratorStub();
         CliApplication application = new CliApplication(
                 new FixedConfigLoader(config),
                 gitWorkflowService,
-                new AgentOrchestratorStub());
+                orchestrator);
         int exitCode = application.run(new String[] {
                 "--upstream-url", "https://example.com/up.git",
                 "--origin-url", "https://example.com/origin.git",
@@ -43,6 +49,7 @@ class CliApplicationTest {
 
         assertThat(exitCode).isZero();
         assertThat(gitWorkflowService.invocationCount).isEqualTo(1);
+        assertThat(orchestrator.invocationCount).isEqualTo(1);
     }
 
     private static final class RecordingGitWorkflowService extends GitWorkflowService {
@@ -71,13 +78,23 @@ class CliApplicationTest {
     }
 
     private static final class AgentOrchestratorStub extends AgentOrchestrator {
+
+        private int invocationCount;
+
         AgentOrchestratorStub() {
-            super(new ai.docsite.translator.diff.DiffAnalyzer(), new TranslationService());
+            this(new TranslationService(), new PullRequestService(new PullRequestComposer()));
+        }
+
+        private AgentOrchestratorStub(TranslationService translationService, PullRequestService pullRequestService) {
+            super(new AgentFactory(new SimpleRoutingChatModel(), translationService, pullRequestService, new DefaultLineStructureAdjuster()),
+                    translationService,
+                    pullRequestService);
         }
 
         @Override
-        public void run() {
-            // no-op for test
+        public AgentRunResult run(Config config, GitWorkflowResult workflowResult) {
+            invocationCount++;
+            return AgentRunResult.empty();
         }
     }
 }

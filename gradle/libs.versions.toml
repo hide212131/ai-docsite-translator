@@ -7,6 +7,7 @@ guava = "33.4.5-jre"
 jgit = "6.10.0.202406032230-r"
 junit-jupiter = "5.12.1"
 langchain4j = "1.5.0"
+langchain4j-agentic = "1.5.0-beta11"
 logback = "1.5.6"
 picocli = "4.7.6"
 slf4j = "2.0.16"
@@ -19,6 +20,7 @@ jgit = { module = "org.eclipse.jgit:org.eclipse.jgit", version.ref = "jgit" }
 junit-jupiter = { module = "org.junit.jupiter:junit-jupiter", version.ref = "junit-jupiter" }
 langchain4j = { module = "dev.langchain4j:langchain4j", version.ref = "langchain4j" }
 langchain4j-google-ai = { module = "dev.langchain4j:langchain4j-google-ai-gemini", version.ref = "langchain4j" }
+langchain4j-agentic = { module = "dev.langchain4j:langchain4j-agentic", version.ref = "langchain4j-agentic" }
 logback = { module = "ch.qos.logback:logback-classic", version.ref = "logback" }
 picocli = { module = "info.picocli:picocli", version.ref = "picocli" }
 slf4j-api = { module = "org.slf4j:slf4j-api", version.ref = "slf4j" }

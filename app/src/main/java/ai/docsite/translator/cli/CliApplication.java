@@ -1,13 +1,18 @@
 package ai.docsite.translator.cli;
 
+import ai.docsite.translator.agent.AgentFactory;
 import ai.docsite.translator.agent.AgentOrchestrator;
+import ai.docsite.translator.agent.AgentRunResult;
+import ai.docsite.translator.agent.SimpleRoutingChatModel;
 import ai.docsite.translator.config.Config;
 import ai.docsite.translator.config.ConfigLoader;
 import ai.docsite.translator.config.SystemEnvironmentReader;
-import ai.docsite.translator.diff.DiffAnalyzer;
 import ai.docsite.translator.git.GitWorkflowResult;
 import ai.docsite.translator.git.GitWorkflowService;
+import ai.docsite.translator.pr.PullRequestComposer;
+import ai.docsite.translator.pr.PullRequestService;
 import ai.docsite.translator.translate.TranslationService;
+import ai.docsite.translator.writer.DefaultLineStructureAdjuster;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import picocli.CommandLine;
@@ -24,9 +29,13 @@ public final class CliApplication {
     private final AgentOrchestrator agentOrchestrator;
 
     public CliApplication() {
-        this(new ConfigLoader(new SystemEnvironmentReader()),
-                new GitWorkflowService(),
-                new AgentOrchestrator(new DiffAnalyzer(), new TranslationService()));
+        TranslationService translationService = new TranslationService();
+        PullRequestService pullRequestService = new PullRequestService(new PullRequestComposer());
+        AgentFactory agentFactory = new AgentFactory(new SimpleRoutingChatModel(), translationService, pullRequestService, new DefaultLineStructureAdjuster());
+
+        this.configLoader = new ConfigLoader(new SystemEnvironmentReader());
+        this.gitWorkflowService = new GitWorkflowService();
+        this.agentOrchestrator = new AgentOrchestrator(agentFactory, translationService, pullRequestService);
     }
 
     CliApplication(ConfigLoader configLoader, GitWorkflowService gitWorkflowService, AgentOrchestrator agentOrchestrator) {
@@ -66,7 +75,8 @@ public final class CliApplication {
         } else {
             LOGGER.info("Repositories already synchronized with upstream");
         }
-        agentOrchestrator.run();
+        AgentRunResult runResult = agentOrchestrator.run(config, workflowResult);
+        LOGGER.info("Agent plan: {}", runResult.planSummary());
         return 0;
     }
 }
