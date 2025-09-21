@@ -1,22 +1,22 @@
 # TASKS
 
 ## タスク 1: プロジェクト初期化と依存設定
-- [ ] Gradle（最新安定版）で Java 21 プロジェクトを初期化し、`config` `git` `diff` `agent` `translate` `writer` `pr` `cli` パッケージを作成する。
-- [ ] LangChain4j、Gemini クライアント、CLI パーサ、ロギング、テスト、JGit もしくは git CLI 連携の依存を追加してビルドが通るようにする。
-- [ ] サンプルの単体テストを追加し、ビルド／テストがローカルで実行できることを確認する。
+- [x] Gradle（最新安定版）で Java 21 プロジェクトを初期化し、`config` `git` `diff` `agent` `translate` `writer` `pr` `cli` パッケージを作成する。
+- [x] LangChain4j、Gemini クライアント、CLI パーサ、ロギング、テスト、JGit もしくは git CLI 連携の依存を追加してビルドが通るようにする。
+- [x] サンプルの単体テストを追加し、ビルド／テストがローカルで実行できることを確認する。
 **完了条件チェックリスト**
-- [ ] `./gradlew build` が成功する。
-- [ ] 各パッケージ配下にクラス雛形が配置されている。
-- [ ] Gradle Wrapper が最新安定版を指し、主要依存ライブラリが `build.gradle` に追加されている。
+- [x] `./gradlew build` が成功する。
+- [x] 各パッケージ配下にクラス雛形が配置されている。
+- [x] Gradle Wrapper が最新安定版を指し、主要依存ライブラリが `build.gradle` に追加されている。
 
 ## タスク 2: 設定層の設計と実装
-- [ ] CLI 引数解析（`--mode`, `--upstream-url`, `--origin-url`, `--origin-branch`, `--translation-branch-template`, `--since`, `--dry-run`）を実装する。
-- [ ] 環境変数／Secrets 読み込みロジックを整備し、統合した `Config` オブジェクトを提供する。
-- [ ] dev/batch モード切替や dry-run フラグの挙動を単体テストで検証する。
+- [x] CLI 引数解析（`--mode`, `--upstream-url`, `--origin-url`, `--origin-branch`, `--translation-branch-template`, `--since`, `--dry-run`）を実装する。
+- [x] 環境変数／Secrets 読み込みロジックを整備し、統合した `Config` オブジェクトを提供する。
+- [x] dev/batch モード切替や dry-run フラグの挙動を単体テストで検証する。
 **完了条件チェックリスト**
-- [ ] CLI から各オプションを指定して `Config` が期待通り生成される。
-- [ ] 環境変数が未設定の場合のフォールバック挙動がテストで確認されている。
-- [ ] dry-run 時に PR 作成や Secrets 参照が行われないことをテストで確認している。
+- [x] CLI から各オプションを指定して `Config` が期待通り生成される。
+- [x] 環境変数が未設定の場合のフォールバック挙動がテストで確認されている。
+- [x] dry-run 時に PR 作成や Secrets 参照が行われないことをテストで確認している。
 
 ## タスク 3: Git ワークフローと差分検出
 - [ ] upstream と origin の clone/fetch を実装し、origin の `main` から `sync-<upstream-short-sha>` ブランチを生成するフローを整備する（short SHA は未翻訳コミットの最新を用いる）。
