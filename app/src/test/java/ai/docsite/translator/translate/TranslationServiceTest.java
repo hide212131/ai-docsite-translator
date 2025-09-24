@@ -50,4 +50,18 @@ class TranslationServiceTest {
         assertThat(service.translateTask(task, TranslationMode.DRY_RUN).lines()).containsExactly("DRY:line");
         assertThat(service.translateTask(task, TranslationMode.PRODUCTION).lines()).containsExactly("PROD:line");
     }
+
+    @Test
+    void fallsBackToSourceWhenTranslatorReturnsBlankOutput() {
+        Translator blankTranslator = source -> source.stream().map(line -> " ").toList();
+        TranslationService service = new TranslationService(new TranslatorFactory(blankTranslator, blankTranslator, blankTranslator), formatter);
+        TranslationTask task = new TranslationTask("docs/addition.md",
+                List.of("new content", "more"),
+                List.of("", ""),
+                List.of(new TranslationSegment(0, 2)));
+
+        TranslationResult result = service.translateTask(task, TranslationMode.PRODUCTION);
+
+        assertThat(result.lines()).containsExactly("new content", "more");
+    }
 }

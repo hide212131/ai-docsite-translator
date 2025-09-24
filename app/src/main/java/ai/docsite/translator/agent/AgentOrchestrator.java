@@ -3,10 +3,14 @@ package ai.docsite.translator.agent;
 import ai.docsite.translator.config.Config;
 import ai.docsite.translator.git.GitWorkflowResult;
 import ai.docsite.translator.pr.PullRequestService;
+import ai.docsite.translator.translate.TranslationOutcome;
 import ai.docsite.translator.translate.TranslationService;
+import ai.docsite.translator.translate.TranslationTask;
+import ai.docsite.translator.translate.TranslationTaskPlanner;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import java.util.Collections;
+import java.util.List;
+import ai.docsite.translator.writer.DocumentWriter;
 
 /**
  * Orchestrates the LangChain4j agent execution and interprets its decisions.
@@ -17,14 +21,20 @@ public class AgentOrchestrator {
 
     private final AgentFactory agentFactory;
     private final TranslationService translationService;
+    private final TranslationTaskPlanner taskPlanner;
+    private final DocumentWriter documentWriter;
     private final PullRequestService pullRequestService;
 
     public AgentOrchestrator(AgentFactory agentFactory,
                              TranslationService translationService,
-                             PullRequestService pullRequestService) {
+                             PullRequestService pullRequestService,
+                             TranslationTaskPlanner taskPlanner,
+                             DocumentWriter documentWriter) {
         this.agentFactory = agentFactory;
         this.translationService = translationService;
         this.pullRequestService = pullRequestService;
+        this.taskPlanner = taskPlanner;
+        this.documentWriter = documentWriter;
     }
 
     public AgentRunResult run(Config config, GitWorkflowResult workflowResult) {
@@ -43,8 +53,14 @@ public class AgentOrchestrator {
         boolean pullRequestDraftCreated = false;
 
         if (shouldTranslate) {
-            translationService.translate(Collections.emptyList(), config.translationMode());
-            translationTriggered = true;
+            List<TranslationTask> tasks = taskPlanner.plan(workflowResult, config.maxFilesPerRun());
+            if (tasks.isEmpty()) {
+                LOGGER.info("No document tasks eligible for translation");
+            } else {
+                TranslationOutcome outcome = translationService.translate(tasks, config.translationMode());
+                outcome.results().forEach(result -> documentWriter.write(workflowResult.originDirectory(), result));
+                translationTriggered = outcome.processedFiles() > 0;
+            }
         } else {
             LOGGER.info("Agent plan requested skipping translation step");
         }

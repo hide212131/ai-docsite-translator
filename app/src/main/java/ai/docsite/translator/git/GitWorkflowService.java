@@ -1,6 +1,7 @@
 package ai.docsite.translator.git;
 
 import ai.docsite.translator.config.Config;
+import ai.docsite.translator.config.Mode;
 import ai.docsite.translator.diff.DiffAnalyzer;
 import ai.docsite.translator.diff.DiffMetadata;
 import java.io.IOException;
@@ -11,6 +12,8 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
+import java.io.UncheckedIOException;
 import org.eclipse.jgit.api.CreateBranchCommand.SetupUpstreamMode;
 import org.eclipse.jgit.api.Git;
 import org.eclipse.jgit.api.MergeCommand;
@@ -43,15 +46,15 @@ public class GitWorkflowService {
     }
 
     public GitWorkflowService() {
-        this(Path.of(System.getProperty("java.io.tmpdir"), "ai-docsite-translator"), new DiffAnalyzer());
+        this(Path.of(System.getProperty("user.dir"), "workspace"), new DiffAnalyzer());
     }
 
     public GitWorkflowResult prepareSyncBranch(Config config) {
         Objects.requireNonNull(config, "config");
         try {
             Files.createDirectories(workspaceRoot);
-            Path upstreamDir = cloneFresh(config.upstreamUrl(), "upstream");
-            Path originDir = cloneFresh(config.originUrl(), "origin");
+            Path upstreamDir = cloneFresh(config, config.upstreamUrl(), "upstream");
+            Path originDir = cloneFresh(config, config.originUrl(), "origin");
 
             try (Git origin = Git.open(originDir.toFile())) {
                 ensureBaseBranchCheckedOut(origin, config.originBranch());
@@ -63,7 +66,7 @@ public class GitWorkflowService {
                 List<RevCommit> pendingCommits = findPendingUpstreamCommits(origin.getRepository(), upstreamHead, originHead);
                 if (pendingCommits.isEmpty()) {
                     LOGGER.info("No untranslated commits detected");
-                    return GitWorkflowResult.empty(upstreamDir, originDir);
+                    return GitWorkflowResult.empty(upstreamDir, originDir, originHead.getName());
                 }
 
                 RevCommit targetCommit = selectTargetCommit(config, pendingCommits);
@@ -78,17 +81,23 @@ public class GitWorkflowService {
                         .call();
 
                 ObjectId translationHead = resolveRequired(origin.getRepository(), "refs/heads/" + branchName);
-                DiffMetadata metadata = diffAnalyzer.analyze(origin.getRepository(), originHead, translationHead);
+                DiffMetadata metadata = mergeResult.getMergeStatus().isSuccessful()
+                        ? diffAnalyzer.analyze(origin.getRepository(), originHead, translationHead)
+                        : diffAnalyzer.analyzeWorkingTree(origin.getRepository(), originHead);
 
-                return new GitWorkflowResult(upstreamDir, originDir, branchName, targetCommit.getName(), shortId.name(), metadata, mergeResult.getMergeStatus());
+                return new GitWorkflowResult(upstreamDir, originDir, branchName, targetCommit.getName(), shortId.name(), originHead.getName(), metadata, mergeResult.getMergeStatus());
             }
         } catch (IOException | GitAPIException e) {
             throw new GitWorkflowException("Failed to prepare translation branch", e);
         }
     }
 
-    private Path cloneFresh(URI uri, String prefix) throws GitAPIException, IOException {
-        Path directory = Files.createTempDirectory(workspaceRoot, prefix + "-");
+    private Path cloneFresh(Config config, URI uri, String prefix) throws GitAPIException, IOException {
+        Path directory = determineCloneDirectory(config.mode(), prefix);
+        if (Files.exists(directory)) {
+            deleteRecursively(directory);
+        }
+        Files.createDirectories(directory);
         try (Git ignored = Git.cloneRepository()
                 .setURI(uri.toString())
                 .setDirectory(directory.toFile())
@@ -97,6 +106,30 @@ public class GitWorkflowService {
             // clone closed via try-with-resources
         }
         return directory;
+    }
+
+    private Path determineCloneDirectory(Mode mode, String prefix) throws IOException {
+        if (mode.isDev()) {
+            Files.createDirectories(workspaceRoot);
+            return workspaceRoot.resolve(prefix);
+        }
+        Files.createDirectories(workspaceRoot);
+        return Files.createTempDirectory(workspaceRoot, prefix + "-");
+    }
+
+    private void deleteRecursively(Path directory) throws IOException {
+        if (!Files.exists(directory)) {
+            return;
+        }
+        try (Stream<Path> paths = Files.walk(directory)) {
+            paths.sorted((a, b) -> b.compareTo(a)).forEach(path -> {
+                try {
+                    Files.deleteIfExists(path);
+                } catch (IOException ex) {
+                    throw new UncheckedIOException("Failed to delete " + path, ex);
+                }
+            });
+        }
     }
 
     private void ensureBaseBranchCheckedOut(Git origin, String branch) throws GitAPIException {

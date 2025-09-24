@@ -11,9 +11,18 @@ import ai.docsite.translator.git.GitWorkflowResult;
 import ai.docsite.translator.git.GitWorkflowService;
 import ai.docsite.translator.pr.PullRequestComposer;
 import ai.docsite.translator.pr.PullRequestService;
+import ai.docsite.translator.translate.GeminiTranslator;
+import ai.docsite.translator.translate.LineStructureFormatter;
+import ai.docsite.translator.translate.MockTranslator;
+import ai.docsite.translator.translate.PassThroughTranslator;
 import ai.docsite.translator.translate.TranslationService;
+import ai.docsite.translator.translate.TranslationMode;
+import ai.docsite.translator.translate.Translator;
+import ai.docsite.translator.translate.TranslatorFactory;
+import ai.docsite.translator.translate.TranslationTaskPlanner;
 import ai.docsite.translator.writer.DefaultLineStructureAdjuster;
 import ai.docsite.translator.writer.DefaultLineStructureAnalyzer;
+import ai.docsite.translator.writer.DocumentWriter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import picocli.CommandLine;
@@ -27,23 +36,14 @@ public final class CliApplication {
 
     private final ConfigLoader configLoader;
     private final GitWorkflowService gitWorkflowService;
-    private final AgentOrchestrator agentOrchestrator;
 
     public CliApplication() {
-        TranslationService translationService = new TranslationService();
-        PullRequestService pullRequestService = new PullRequestService(new PullRequestComposer());
-        AgentFactory agentFactory = new AgentFactory(new SimpleRoutingChatModel(), translationService, pullRequestService,
-                new DefaultLineStructureAnalyzer(), new DefaultLineStructureAdjuster());
-
-        this.configLoader = new ConfigLoader(new SystemEnvironmentReader());
-        this.gitWorkflowService = new GitWorkflowService();
-        this.agentOrchestrator = new AgentOrchestrator(agentFactory, translationService, pullRequestService);
+        this(new ConfigLoader(new SystemEnvironmentReader()), new GitWorkflowService());
     }
 
-    CliApplication(ConfigLoader configLoader, GitWorkflowService gitWorkflowService, AgentOrchestrator agentOrchestrator) {
+    CliApplication(ConfigLoader configLoader, GitWorkflowService gitWorkflowService) {
         this.configLoader = configLoader;
         this.gitWorkflowService = gitWorkflowService;
-        this.agentOrchestrator = agentOrchestrator;
     }
 
     public static void main(String[] args) {
@@ -71,6 +71,14 @@ public final class CliApplication {
         LOGGER.info("Running in {} mode (dryRun={}): upstream={} origin={}",
                 config.mode(), config.dryRun(), config.upstreamUrl(), config.originUrl());
 
+        TranslationService translationService = createTranslationService(config);
+        PullRequestService pullRequestService = new PullRequestService(new PullRequestComposer());
+        TranslationTaskPlanner taskPlanner = new TranslationTaskPlanner();
+        DocumentWriter documentWriter = new DocumentWriter();
+        AgentFactory agentFactory = new AgentFactory(new SimpleRoutingChatModel(), translationService, pullRequestService,
+                new DefaultLineStructureAnalyzer(), new DefaultLineStructureAdjuster());
+        AgentOrchestrator agentOrchestrator = new AgentOrchestrator(agentFactory, translationService, pullRequestService, taskPlanner, documentWriter);
+
         GitWorkflowResult workflowResult = gitWorkflowService.prepareSyncBranch(config);
         if (!workflowResult.translationBranch().isEmpty()) {
             LOGGER.info("Prepared translation branch {} targeting {}", workflowResult.translationBranch(), workflowResult.targetCommitShortSha());
@@ -80,5 +88,25 @@ public final class CliApplication {
         AgentRunResult runResult = agentOrchestrator.run(config, workflowResult);
         LOGGER.info("Agent plan: {}", runResult.planSummary());
         return 0;
+    }
+
+    private TranslationService createTranslationService(Config config) {
+        TranslatorFactory factory = buildTranslatorFactory(config);
+        LineStructureFormatter formatter = new LineStructureFormatter(new DefaultLineStructureAnalyzer(), new DefaultLineStructureAdjuster());
+        return new TranslationService(factory, formatter);
+    }
+
+    private TranslatorFactory buildTranslatorFactory(Config config) {
+        Translator productionTranslator = config.secrets().geminiApiKey()
+                .filter(key -> !key.isBlank())
+                .map(GeminiTranslator::new)
+                .map(Translator.class::cast)
+                .orElseGet(MockTranslator::new);
+        if (config.translationMode() == TranslationMode.PRODUCTION && config.secrets().geminiApiKey().isEmpty()) {
+            LOGGER.warn("GEMINI_API_KEY is not configured; production mode will fall back to mock translation");
+        }
+        Translator dryRunTranslator = new PassThroughTranslator();
+        Translator mockTranslator = new MockTranslator();
+        return new TranslatorFactory(productionTranslator, dryRunTranslator, mockTranslator);
     }
 }

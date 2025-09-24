@@ -15,9 +15,12 @@ import ai.docsite.translator.pr.PullRequestService.PullRequestDraft;
 import ai.docsite.translator.translate.TranslationMode;
 import ai.docsite.translator.translate.TranslationOutcome;
 import ai.docsite.translator.translate.TranslationService;
+import ai.docsite.translator.translate.TranslationTaskPlanner;
 import ai.docsite.translator.translate.TranslationTask;
+import ai.docsite.translator.translate.TranslationResult;
 import ai.docsite.translator.writer.DefaultLineStructureAdjuster;
 import ai.docsite.translator.writer.DefaultLineStructureAnalyzer;
+import ai.docsite.translator.writer.DocumentWriter;
 import java.net.URI;
 import java.nio.file.Path;
 import java.util.List;
@@ -31,14 +34,19 @@ class AgentOrchestratorTest {
     private TranslationServiceSpy translationService;
     private PullRequestServiceSpy pullRequestService;
     private AgentOrchestrator orchestrator;
+    private FixedPlanner taskPlanner;
+    private RecordingDocumentWriter documentWriter;
 
     @BeforeEach
     void setUp() {
         translationService = new TranslationServiceSpy();
         pullRequestService = new PullRequestServiceSpy();
+        taskPlanner = new FixedPlanner();
+        documentWriter = new RecordingDocumentWriter();
         AgentFactory agentFactory = new AgentFactory(new SimpleRoutingChatModel(), translationService, pullRequestService,
                 new DefaultLineStructureAnalyzer(), new DefaultLineStructureAdjuster());
-        orchestrator = new AgentOrchestrator(agentFactory, translationService, pullRequestService);
+        orchestrator = new AgentOrchestrator(agentFactory, translationService, pullRequestService,
+                taskPlanner, documentWriter);
     }
 
     @Test
@@ -53,6 +61,7 @@ class AgentOrchestratorTest {
         assertThat(translationService.invocations).isEqualTo(1);
         assertThat(translationService.lastMode).isEqualTo(TranslationMode.PRODUCTION);
         assertThat(pullRequestService.invocations).isZero();
+        assertThat(documentWriter.invocations).isEqualTo(1);
     }
 
     @Test
@@ -66,6 +75,7 @@ class AgentOrchestratorTest {
         assertThat(result.pullRequestDraftCreated()).isTrue();
         assertThat(translationService.invocations).isZero();
         assertThat(pullRequestService.invocations).isEqualTo(1);
+        assertThat(documentWriter.invocations).isZero();
     }
 
     private Config config(Mode mode, boolean dryRun) {
@@ -78,14 +88,15 @@ class AgentOrchestratorTest {
                 dryRun,
                 dryRun ? TranslationMode.DRY_RUN : TranslationMode.PRODUCTION,
                 new Secrets(Optional.empty(), Optional.empty()),
-                Optional.empty());
+                Optional.empty(),
+                0);
     }
 
     private GitWorkflowResult workflowResultWithChanges() {
         DiffMetadata metadata = new DiffMetadata(List.of(
                 new FileChange("docs/new.md", ChangeCategory.DOCUMENT_NEW),
                 new FileChange("README.md", ChangeCategory.DOCUMENT_UPDATED)));
-        return new GitWorkflowResult(Path.of("up"), Path.of("origin"), "sync-abc1234", "abcdef0123456789", "abc1234", metadata, MergeStatus.MERGED);
+        return new GitWorkflowResult(Path.of("up"), Path.of("origin"), "sync-abc1234", "abcdef0123456789", "abc1234", "deadbeef", metadata, MergeStatus.MERGED);
     }
 
     private static final class TranslationServiceSpy extends TranslationService {
@@ -111,6 +122,28 @@ class AgentOrchestratorTest {
         public PullRequestDraft prepareDryRunDraft(GitWorkflowResult workflowResult) {
             invocations++;
             return super.prepareDryRunDraft(workflowResult);
+        }
+    }
+
+    private static final class FixedPlanner extends TranslationTaskPlanner {
+        private final List<TranslationTask> tasks;
+
+        FixedPlanner() {
+            tasks = List.of(new TranslationTask("docs/new.md", List.of("line one"), List.of(), List.of()));
+        }
+
+        @Override
+        public List<TranslationTask> plan(GitWorkflowResult workflowResult, int maxFilesPerRun) {
+            return tasks;
+        }
+    }
+
+    private static final class RecordingDocumentWriter extends DocumentWriter {
+        private int invocations;
+
+        @Override
+        public void write(Path originRoot, TranslationResult result) {
+            invocations++;
         }
     }
 }

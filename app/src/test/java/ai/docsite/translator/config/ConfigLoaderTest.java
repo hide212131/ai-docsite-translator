@@ -25,7 +25,8 @@ class ConfigLoaderTest {
                 "--origin-branch", "docs",
                 "--translation-branch-template", "custom-sync-<upstream-short-sha>",
                 "--since", "abc123",
-                "--dry-run");
+                "--dry-run",
+                "--limit", "5");
 
         Config config = new ConfigLoader(key -> Optional.empty()).load(cliArguments);
 
@@ -38,6 +39,7 @@ class ConfigLoaderTest {
         assertThat(config.translationMode()).isEqualTo(TranslationMode.DRY_RUN);
         assertThat(config.secrets().geminiApiKey()).isEmpty();
         assertThat(config.secrets().githubToken()).isEmpty();
+        assertThat(config.maxFilesPerRun()).isEqualTo(5);
     }
 
     @Test
@@ -49,6 +51,7 @@ class ConfigLoaderTest {
         envValues.put(ConfigLoader.ENV_TRANSLATION_BRANCH_TEMPLATE, "sync-<upstream-short-sha>");
         envValues.put(ConfigLoader.ENV_GEMINI_API_KEY, "gemini-key");
         envValues.put(ConfigLoader.ENV_GITHUB_TOKEN, "github-token");
+        envValues.put(ConfigLoader.ENV_MAX_FILES_PER_RUN, "2");
 
         RecordingEnvironmentReader environmentReader = new RecordingEnvironmentReader(envValues);
         CliArguments cliArguments = CommandLine.populateCommand(new CliArguments());
@@ -62,6 +65,7 @@ class ConfigLoaderTest {
         assertThat(config.translationMode()).isEqualTo(TranslationMode.PRODUCTION);
         assertThat(config.secrets().geminiApiKey()).contains("gemini-key");
         assertThat(config.secrets().githubToken()).contains("github-token");
+        assertThat(config.maxFilesPerRun()).isEqualTo(2);
     }
 
     @Test
@@ -76,7 +80,8 @@ class ConfigLoaderTest {
 
         assertThat(config.dryRun()).isTrue();
         assertThat(config.translationMode()).isEqualTo(TranslationMode.DRY_RUN);
-        assertThat(environmentReader.requestedKeys()).doesNotContain(ConfigLoader.ENV_GEMINI_API_KEY, ConfigLoader.ENV_GITHUB_TOKEN);
+        assertThat(config.secrets().geminiApiKey()).isEmpty();
+        assertThat(config.secrets().githubToken()).isEmpty();
     }
 
     @Test

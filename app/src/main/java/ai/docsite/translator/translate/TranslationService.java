@@ -22,8 +22,10 @@ public class TranslationService {
     private final LineStructureFormatter formatter;
 
     public TranslationService() {
-        Translator placeholder = new MockTranslator();
-        this.translatorFactory = new TranslatorFactory(placeholder, placeholder, placeholder);
+        Translator production = new MockTranslator();
+        Translator dryRun = new PassThroughTranslator();
+        Translator mock = new MockTranslator();
+        this.translatorFactory = new TranslatorFactory(production, dryRun, mock);
         this.formatter = new LineStructureFormatter(new DefaultLineStructureAnalyzer(), new DefaultLineStructureAdjuster());
     }
 
@@ -59,6 +61,10 @@ public class TranslationService {
             List<String> sourceSlice = new ArrayList<>(task.sourceLines().subList(segment.startLine(), segment.endLineExclusive()));
             List<String> rawTranslation = translator.translate(sourceSlice);
             List<String> formatted = formatter.format(sourceSlice, rawTranslation);
+            boolean emptyOutput = formatted.isEmpty() || formatted.stream().allMatch(String::isBlank);
+            if (emptyOutput) {
+                formatted = sourceSlice;
+            }
             replaceRange(translated, segment.startLine(), segment.endLineExclusive(), formatted);
         }
 

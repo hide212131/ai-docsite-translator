@@ -14,7 +14,9 @@ import org.eclipse.jgit.lib.ObjectId;
 import org.eclipse.jgit.lib.ObjectReader;
 import org.eclipse.jgit.lib.Repository;
 import org.eclipse.jgit.revwalk.RevWalk;
+import org.eclipse.jgit.treewalk.AbstractTreeIterator;
 import org.eclipse.jgit.treewalk.CanonicalTreeParser;
+import org.eclipse.jgit.treewalk.FileTreeIterator;
 
 /**
  * Performs diff analysis between two commits and classifies file changes for downstream processing.
@@ -41,24 +43,22 @@ public class DiffAnalyzer {
         try (Git git = Git.wrap(repository)) {
             CanonicalTreeParser baseTree = prepareTreeParser(repository, baseCommit);
             CanonicalTreeParser headTree = prepareTreeParser(repository, headCommit);
-
-            List<DiffEntry> entries = git.diff()
-                    .setOldTree(baseTree)
-                    .setNewTree(headTree)
-                    .setShowNameAndStatusOnly(true)
-                    .call();
-
-            List<FileChange> changes = new ArrayList<>();
-            for (DiffEntry entry : entries) {
-                ChangeCategory category = categorize(entry);
-                if (category != null) {
-                    String path = resolvePath(entry);
-                    changes.add(new FileChange(path, category));
-                }
-            }
-            return new DiffMetadata(changes);
+            return buildMetadata(git, baseTree, headTree);
         } catch (GitAPIException | IOException e) {
             throw new DiffAnalysisException("Failed to analyze diff", e);
+        }
+    }
+
+    public DiffMetadata analyzeWorkingTree(Repository repository, ObjectId baseCommit) {
+        Objects.requireNonNull(repository, "repository");
+        Objects.requireNonNull(baseCommit, "baseCommit");
+
+        try (Git git = Git.wrap(repository)) {
+            CanonicalTreeParser baseTree = prepareTreeParser(repository, baseCommit);
+            FileTreeIterator workingTree = new FileTreeIterator(repository);
+            return buildMetadata(git, baseTree, workingTree);
+        } catch (GitAPIException | IOException e) {
+            throw new DiffAnalysisException("Failed to analyze working tree diff", e);
         }
     }
 
@@ -68,6 +68,25 @@ public class DiffAnalyzer {
             treeParser.reset(reader, walk.parseCommit(commitId).getTree().getId());
             return treeParser;
         }
+    }
+
+    private DiffMetadata buildMetadata(Git git, CanonicalTreeParser baseTree, AbstractTreeIterator newTree)
+            throws GitAPIException {
+        List<DiffEntry> entries = git.diff()
+                .setOldTree(baseTree)
+                .setNewTree(newTree)
+                .setShowNameAndStatusOnly(true)
+                .call();
+
+        List<FileChange> changes = new ArrayList<>();
+        for (DiffEntry entry : entries) {
+            ChangeCategory category = categorize(entry);
+            if (category != null) {
+                String path = resolvePath(entry);
+                changes.add(new FileChange(path, category));
+            }
+        }
+        return new DiffMetadata(changes);
     }
 
     private ChangeCategory categorize(DiffEntry entry) {

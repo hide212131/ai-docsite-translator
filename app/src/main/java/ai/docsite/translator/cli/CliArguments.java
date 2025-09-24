@@ -32,6 +32,9 @@ public class CliArguments {
     @CommandLine.Option(names = "--translation-mode", description = "Translation execution mode: production, dry-run, or mock", converter = TranslationModeConverter.class)
     private TranslationMode translationMode;
 
+    @CommandLine.Option(names = "--limit", description = "Maximum number of documents to translate in this run", paramLabel = "COUNT")
+    private Integer translationLimit;
+
     public Mode mode() {
         return mode;
     }
@@ -62,5 +65,9 @@ public class CliArguments {
 
     public TranslationMode translationMode() {
         return translationMode;
+    }
+
+    public Integer translationLimit() {
+        return translationLimit;
     }
 }

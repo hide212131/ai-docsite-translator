@@ -18,7 +18,8 @@ public record Config(
         boolean dryRun,
         TranslationMode translationMode,
         Secrets secrets,
-        Optional<String> translationTargetSha
+        Optional<String> translationTargetSha,
+        int maxFilesPerRun
 ) {
 
     private static final String DEFAULT_TEMPLATE_TOKEN = "<upstream-short-sha>";
@@ -36,6 +37,9 @@ public record Config(
         translationMode = Objects.requireNonNull(translationMode, "translationMode");
         secrets = Objects.requireNonNull(secrets, "secrets");
         translationTargetSha = translationTargetSha == null ? Optional.empty() : translationTargetSha;
+        if (maxFilesPerRun < 0) {
+            throw new IllegalArgumentException("maxFilesPerRun must be greater than or equal to zero");
+        }
         if (mode == Mode.BATCH && since.isPresent()) {
             throw new IllegalArgumentException("--since can only be used in dev mode");
         }

@@ -13,6 +13,7 @@ public record GitWorkflowResult(Path upstreamDirectory,
                                 String translationBranch,
                                 String targetCommitSha,
                                 String targetCommitShortSha,
+                                String originBaseCommitSha,
                                 DiffMetadata diffMetadata,
                                 MergeStatus mergeStatus) {
 
@@ -22,11 +23,12 @@ public record GitWorkflowResult(Path upstreamDirectory,
         Objects.requireNonNull(translationBranch, "translationBranch");
         Objects.requireNonNull(targetCommitSha, "targetCommitSha");
         Objects.requireNonNull(targetCommitShortSha, "targetCommitShortSha");
+        Objects.requireNonNull(originBaseCommitSha, "originBaseCommitSha");
         Objects.requireNonNull(diffMetadata, "diffMetadata");
         Objects.requireNonNull(mergeStatus, "mergeStatus");
     }
 
-    public static GitWorkflowResult empty(Path upstreamDirectory, Path originDirectory) {
-        return new GitWorkflowResult(upstreamDirectory, originDirectory, "", "", "", DiffMetadata.empty(), MergeStatus.ALREADY_UP_TO_DATE);
+    public static GitWorkflowResult empty(Path upstreamDirectory, Path originDirectory, String originBaseCommitSha) {
+        return new GitWorkflowResult(upstreamDirectory, originDirectory, "", "", "", originBaseCommitSha, DiffMetadata.empty(), MergeStatus.ALREADY_UP_TO_DATE);
     }
 }

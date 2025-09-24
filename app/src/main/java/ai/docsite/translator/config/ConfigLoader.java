@@ -22,6 +22,7 @@ public class ConfigLoader {
     static final String ENV_GITHUB_TOKEN = "GITHUB_TOKEN";
     static final String ENV_TRANSLATION_TARGET_SHA = "TRANSLATION_TARGET_SHA";
     static final String ENV_TRANSLATION_MODE = "TRANSLATION_MODE";
+    static final String ENV_MAX_FILES_PER_RUN = "MAX_FILES_PER_RUN";
 
     private static final String DEFAULT_ORIGIN_BRANCH = "main";
     private static final String DEFAULT_BRANCH_TEMPLATE = "sync-<upstream-short-sha>";
@@ -50,21 +51,28 @@ public class ConfigLoader {
         Optional<String> translationTargetSha = environmentReader.get(ENV_TRANSLATION_TARGET_SHA)
                 .filter(ConfigLoader::isNotBlank);
 
-        Optional<String> geminiApiKey = dryRun ? Optional.empty() : environmentReader.get(ENV_GEMINI_API_KEY).filter(ConfigLoader::isNotBlank);
-        Optional<String> githubToken = dryRun ? Optional.empty() : environmentReader.get(ENV_GITHUB_TOKEN).filter(ConfigLoader::isNotBlank);
+        Optional<String> geminiApiKey = environmentReader.get(ENV_GEMINI_API_KEY).filter(ConfigLoader::isNotBlank);
+        Optional<String> githubToken = environmentReader.get(ENV_GITHUB_TOKEN).filter(ConfigLoader::isNotBlank);
 
-        if (!dryRun) {
-            if (geminiApiKey.isEmpty()) {
-                throw new IllegalStateException("GEMINI_API_KEY must be provided unless running in dry-run mode");
-            }
-            if (githubToken.isEmpty()) {
-                throw new IllegalStateException("GITHUB_TOKEN must be provided unless running in dry-run mode");
-            }
+        int maxFilesPerRun = resolveMaxFilesPerRun(arguments);
+        if (maxFilesPerRun == -1) {
+            maxFilesPerRun = environmentReader.get(ENV_MAX_FILES_PER_RUN)
+                    .filter(ConfigLoader::isNotBlank)
+                    .map(String::trim)
+                    .map(ConfigLoader::parsePositiveInteger)
+                    .orElse(0);
+        }
+
+        if (translationMode == TranslationMode.PRODUCTION && geminiApiKey.isEmpty()) {
+            throw new IllegalStateException("GEMINI_API_KEY must be provided when TRANSLATION_MODE=production");
+        }
+        if (!dryRun && githubToken.isEmpty()) {
+            throw new IllegalStateException("GITHUB_TOKEN must be provided unless running in dry-run mode");
         }
 
         Secrets secrets = new Secrets(geminiApiKey, githubToken);
 
-        return new Config(mode, upstreamUrl, originUrl, originBranch, translationBranchTemplate, since, dryRun, translationMode, secrets, translationTargetSha);
+        return new Config(mode, upstreamUrl, originUrl, originBranch, translationBranchTemplate, since, dryRun, translationMode, secrets, translationTargetSha, maxFilesPerRun);
     }
 
     private Mode resolveMode(CliArguments arguments) {
@@ -95,6 +103,29 @@ public class ConfigLoader {
         return environmentReader.get(ENV_TRANSLATION_MODE)
                 .map(TranslationMode::from)
                 .orElse(dryRun ? TranslationMode.DRY_RUN : TranslationMode.PRODUCTION);
+    }
+
+    private int resolveMaxFilesPerRun(CliArguments arguments) {
+        Integer limit = arguments.translationLimit();
+        if (limit == null) {
+            return -1;
+        }
+        if (limit < 0) {
+            throw new IllegalArgumentException("--limit must be zero or greater");
+        }
+        return limit;
+    }
+
+    private static int parsePositiveInteger(String raw) {
+        try {
+            int value = Integer.parseInt(raw);
+            if (value < 0) {
+                throw new IllegalArgumentException("MAX_FILES_PER_RUN must be zero or greater");
+            }
+            return value;
+        } catch (NumberFormatException ex) {
+            throw new IllegalArgumentException("MAX_FILES_PER_RUN must be an integer", ex);
+        }
     }
 
     private URI resolveUri(URI cliValue, String envKey, String errorMessage) {
