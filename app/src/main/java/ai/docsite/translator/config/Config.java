@@ -17,6 +17,7 @@ public record Config(
         Optional<String> since,
         boolean dryRun,
         TranslationMode translationMode,
+        TranslatorConfig translatorConfig,
         Secrets secrets,
         Optional<String> translationTargetSha,
         int maxFilesPerRun
@@ -35,6 +36,7 @@ public record Config(
         }
         since = since == null ? Optional.empty() : since;
         translationMode = Objects.requireNonNull(translationMode, "translationMode");
+        translatorConfig = Objects.requireNonNull(translatorConfig, "translatorConfig");
         secrets = Objects.requireNonNull(secrets, "secrets");
         translationTargetSha = translationTargetSha == null ? Optional.empty() : translationTargetSha;
         if (maxFilesPerRun < 0) {

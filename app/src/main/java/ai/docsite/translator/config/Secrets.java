@@ -6,19 +6,18 @@ import java.util.Optional;
 /**
  * Holds sensitive credentials needed for external integrations.
  */
-public record Secrets(Optional<String> geminiApiKey, Optional<String> githubToken) {
+public record Secrets(Optional<String> githubToken, Optional<String> geminiApiKey) {
 
     public Secrets {
-        geminiApiKey = geminiApiKey == null ? Optional.empty() : geminiApiKey;
         githubToken = githubToken == null ? Optional.empty() : githubToken;
+        geminiApiKey = geminiApiKey == null ? Optional.empty() : geminiApiKey;
     }
 
     public boolean isProductionReady() {
-        return geminiApiKey.filter(s -> !s.isBlank()).isPresent()
-                && githubToken.filter(s -> !s.isBlank()).isPresent();
+        return githubToken.filter(s -> !s.isBlank()).isPresent();
     }
 
     public Secrets sanitizeForDryRun() {
-        return new Secrets(Optional.empty(), Optional.empty());
+        return new Secrets(Optional.empty(), geminiApiKey);
     }
 }

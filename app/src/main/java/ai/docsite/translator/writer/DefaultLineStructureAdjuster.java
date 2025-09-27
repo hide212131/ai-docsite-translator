@@ -43,8 +43,16 @@ public class DefaultLineStructureAdjuster implements LineStructureAdjuster {
                     case WHITESPACE -> {
                         String value = position < source.size() ? source.get(position) : "";
                         adjusted.set(position, value.isEmpty() ? " " : value);
+                        if (!translationContentOnly && translationCursor < translation.size() && translation.get(translationCursor).isBlank()) {
+                            translationCursor++;
+                        }
                     }
-                    case EMPTY -> adjusted.set(position, "");
+                    case EMPTY -> {
+                        adjusted.set(position, "");
+                        if (!translationContentOnly && translationCursor < translation.size() && translation.get(translationCursor).isBlank()) {
+                            translationCursor++;
+                        }
+                    }
                 }
                 if (segment.type() == LineType.CONTENT) {
                     if (translationCursor < translation.size()) {

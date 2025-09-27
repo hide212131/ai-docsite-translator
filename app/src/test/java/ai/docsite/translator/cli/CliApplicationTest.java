@@ -4,8 +4,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import ai.docsite.translator.config.Config;
 import ai.docsite.translator.config.ConfigLoader;
+import ai.docsite.translator.config.LlmProvider;
 import ai.docsite.translator.config.Mode;
 import ai.docsite.translator.config.Secrets;
+import ai.docsite.translator.config.TranslatorConfig;
 import ai.docsite.translator.git.GitWorkflowResult;
 import ai.docsite.translator.git.GitWorkflowService;
 import ai.docsite.translator.translate.TranslationMode;
@@ -26,6 +28,7 @@ class CliApplicationTest {
                 Optional.empty(),
                 true,
                 TranslationMode.DRY_RUN,
+                new TranslatorConfig(LlmProvider.OLLAMA, "lucas2024/hodachi-ezo-humanities-9b-gemma-2-it:q8_0", Optional.of("http://localhost:11434")),
                 new Secrets(Optional.empty(), Optional.empty()),
                 Optional.empty(),
                 0);

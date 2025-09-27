@@ -11,7 +11,6 @@ langchain4j-agentic = "1.5.0-beta11"
 logback = "1.5.6"
 picocli = "4.7.6"
 slf4j = "2.0.16"
-vertexai = "1.24.0"
 
 [libraries]
 assertj = { module = "org.assertj:assertj-core", version.ref = "assertj" }
@@ -19,9 +18,9 @@ guava = { module = "com.google.guava:guava", version.ref = "guava" }
 jgit = { module = "org.eclipse.jgit:org.eclipse.jgit", version.ref = "jgit" }
 junit-jupiter = { module = "org.junit.jupiter:junit-jupiter", version.ref = "junit-jupiter" }
 langchain4j = { module = "dev.langchain4j:langchain4j", version.ref = "langchain4j" }
-langchain4j-google-ai = { module = "dev.langchain4j:langchain4j-google-ai-gemini", version.ref = "langchain4j" }
+langchain4j-ollama = { module = "dev.langchain4j:langchain4j-ollama", version.ref = "langchain4j" }
+langchain4j-google-ai-gemini = { module = "dev.langchain4j:langchain4j-google-ai-gemini", version.ref = "langchain4j" }
 langchain4j-agentic = { module = "dev.langchain4j:langchain4j-agentic", version.ref = "langchain4j-agentic" }
 logback = { module = "ch.qos.logback:logback-classic", version.ref = "logback" }
 picocli = { module = "info.picocli:picocli", version.ref = "picocli" }
 slf4j-api = { module = "org.slf4j:slf4j-api", version.ref = "slf4j" }
-vertexai = { module = "com.google.cloud:google-cloud-vertexai", version.ref = "vertexai" }

@@ -6,12 +6,14 @@ import ai.docsite.translator.agent.AgentRunResult;
 import ai.docsite.translator.agent.SimpleRoutingChatModel;
 import ai.docsite.translator.config.Config;
 import ai.docsite.translator.config.ConfigLoader;
+import ai.docsite.translator.config.Secrets;
 import ai.docsite.translator.config.SystemEnvironmentReader;
+import ai.docsite.translator.config.TranslatorConfig;
 import ai.docsite.translator.git.GitWorkflowResult;
 import ai.docsite.translator.git.GitWorkflowService;
 import ai.docsite.translator.pr.PullRequestComposer;
 import ai.docsite.translator.pr.PullRequestService;
-import ai.docsite.translator.translate.GeminiTranslator;
+import ai.docsite.translator.translate.ChatModelTranslator;
 import ai.docsite.translator.translate.LineStructureFormatter;
 import ai.docsite.translator.translate.MockTranslator;
 import ai.docsite.translator.translate.PassThroughTranslator;
@@ -23,9 +25,12 @@ import ai.docsite.translator.translate.TranslationTaskPlanner;
 import ai.docsite.translator.writer.DefaultLineStructureAdjuster;
 import ai.docsite.translator.writer.DefaultLineStructureAnalyzer;
 import ai.docsite.translator.writer.DocumentWriter;
+import dev.langchain4j.model.googleai.GoogleAiGeminiChatModel;
+import dev.langchain4j.model.ollama.OllamaChatModel;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import picocli.CommandLine;
+import java.time.Duration;
 
 /**
  * Entry point wiring the command-line parser and configuration loader.
@@ -97,16 +102,58 @@ public final class CliApplication {
     }
 
     private TranslatorFactory buildTranslatorFactory(Config config) {
-        Translator productionTranslator = config.secrets().geminiApiKey()
-                .filter(key -> !key.isBlank())
-                .map(GeminiTranslator::new)
-                .map(Translator.class::cast)
-                .orElseGet(MockTranslator::new);
-        if (config.translationMode() == TranslationMode.PRODUCTION && config.secrets().geminiApiKey().isEmpty()) {
-            LOGGER.warn("GEMINI_API_KEY is not configured; production mode will fall back to mock translation");
-        }
+        Translator productionTranslator = createProductionTranslator(config);
         Translator dryRunTranslator = new PassThroughTranslator();
         Translator mockTranslator = new MockTranslator();
         return new TranslatorFactory(productionTranslator, dryRunTranslator, mockTranslator);
+    }
+
+    private Translator createProductionTranslator(Config config) {
+        TranslatorConfig translatorConfig = config.translatorConfig();
+        return switch (translatorConfig.provider()) {
+            case OLLAMA -> createOllamaTranslator(translatorConfig);
+            case GEMINI -> createGeminiTranslator(translatorConfig, config.secrets());
+        };
+    }
+
+    private Translator createOllamaTranslator(TranslatorConfig translatorConfig) {
+        try {
+            String baseUrl = translatorConfig.baseUrl()
+                    .orElseThrow(() -> new IllegalStateException("OLLAMA_BASE_URL must be configured when LLM_PROVIDER=ollama"));
+            LOGGER.info("Using Ollama model '{}' via {}", translatorConfig.modelName(), baseUrl);
+            return new ChatModelTranslator(
+                    OllamaChatModel.builder()
+                            .baseUrl(baseUrl)
+                            .modelName(translatorConfig.modelName())
+                            .temperature(0.1)
+                            .timeout(Duration.ofMinutes(2))
+                            .build(),
+                    "Ollama",
+                    translatorConfig.modelName()
+            );
+        } catch (RuntimeException ex) {
+            throw new IllegalStateException("Failed to initialize Ollama translator", ex);
+        }
+    }
+
+    private Translator createGeminiTranslator(TranslatorConfig translatorConfig, Secrets secrets) {
+        String apiKey = secrets.geminiApiKey()
+                .filter(value -> !value.isBlank())
+                .orElseThrow(() -> new IllegalStateException("GEMINI_API_KEY must be provided when LLM_PROVIDER=gemini"));
+        try {
+            LOGGER.info("Using Gemini model '{}'", translatorConfig.modelName());
+            return new ChatModelTranslator(
+                    GoogleAiGeminiChatModel.builder()
+                            .apiKey(apiKey)
+                            .modelName(translatorConfig.modelName())
+                            .temperature(0.1)
+                            .timeout(Duration.ofMinutes(2))
+                            .build(),
+                    "Gemini",
+                    translatorConfig.modelName()
+            );
+        } catch (RuntimeException ex) {
+            throw new IllegalStateException("Failed to initialize Gemini translator", ex);
+        }
     }
 }

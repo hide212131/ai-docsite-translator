@@ -81,11 +81,13 @@ public class GitWorkflowService {
                         .call();
 
                 ObjectId translationHead = resolveRequired(origin.getRepository(), "refs/heads/" + branchName);
+                ObjectId baseUpstreamCommit = findBaseUpstreamCommit(origin.getRepository(), targetCommit, originHead);
                 DiffMetadata metadata = mergeResult.getMergeStatus().isSuccessful()
                         ? diffAnalyzer.analyze(origin.getRepository(), originHead, translationHead)
                         : diffAnalyzer.analyzeWorkingTree(origin.getRepository(), originHead);
 
-                return new GitWorkflowResult(upstreamDir, originDir, branchName, targetCommit.getName(), shortId.name(), originHead.getName(), metadata, mergeResult.getMergeStatus());
+                return new GitWorkflowResult(upstreamDir, originDir, branchName, targetCommit.getName(), shortId.name(),
+                        baseUpstreamCommit.getName(), originHead.getName(), metadata, mergeResult.getMergeStatus());
             }
         } catch (IOException | GitAPIException e) {
             throw new GitWorkflowException("Failed to prepare translation branch", e);
@@ -158,6 +160,24 @@ public class GitWorkflowService {
     private ObjectId fetchUpstreamHead(Git origin, String branch) throws GitAPIException, IOException {
         origin.fetch().setRemote("upstream").call();
         return resolveRequired(origin.getRepository(), "refs/remotes/upstream/" + branch);
+    }
+
+    private ObjectId findBaseUpstreamCommit(Repository repository, RevCommit targetCommit, ObjectId originHead) throws IOException {
+        try (RevWalk walk = new RevWalk(repository)) {
+            RevCommit originCommit = walk.parseCommit(originHead);
+            RevCommit upstreamCommit = walk.parseCommit(targetCommit);
+            walk.setRevFilter(org.eclipse.jgit.revwalk.filter.RevFilter.MERGE_BASE);
+            walk.markStart(upstreamCommit);
+            walk.markStart(originCommit);
+            RevCommit base = walk.next();
+            if (base != null) {
+                return base.getId();
+            }
+        }
+        if (targetCommit.getParentCount() > 0) {
+            return targetCommit.getParent(0).getId();
+        }
+        return targetCommit.getId();
     }
 
     private List<RevCommit> findPendingUpstreamCommits(Repository repository, ObjectId upstreamHead, ObjectId originHead)

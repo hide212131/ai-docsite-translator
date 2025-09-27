@@ -57,7 +57,7 @@ GitHubにあるドキュメント構築サイトリポジトリ内の英語文�
 - ビルドは、Gradleの最新バージョンを用いること
 - LLMフレームワークは、LangChain4jのv1.5.0以上を用いること
 - https://docs.langchain4j.dev/tutorials/agents に従い、Agentic な設計方針とすること
-- LLMは、Geminiを用いること。APIキーは持っているが、安全のためGitHub Actions の Secrets に登録する。
+- LLM 推論は LangChain4j 経由でローカルの Ollama (モデル: lucas2024/hodachi-ezo-humanities-9b-gemma-2-it:q8_0) を利用する。
 - ローカル環境は以下を考慮する
     - GitHub Actions を何回も実行しなくても良いように、可能な限りローカルで動作を確認できる環境を構築する
         - GitHub Actions の yamlに多くを書くのではなく、要望に「ローカル環境でスクリプト実行も実現可能とする」と書いたようにスクリプトで記述するのが望ましい

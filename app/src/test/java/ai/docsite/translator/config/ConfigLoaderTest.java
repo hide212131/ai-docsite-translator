@@ -37,8 +37,11 @@ class ConfigLoaderTest {
         assertThat(config.since()).contains("abc123");
         assertThat(config.dryRun()).isTrue();
         assertThat(config.translationMode()).isEqualTo(TranslationMode.DRY_RUN);
-        assertThat(config.secrets().geminiApiKey()).isEmpty();
+        assertThat(config.translatorConfig().provider()).isEqualTo(LlmProvider.OLLAMA);
+        assertThat(config.translatorConfig().modelName()).isEqualTo("lucas2024/hodachi-ezo-humanities-9b-gemma-2-it:q8_0");
+        assertThat(config.translatorConfig().baseUrl()).contains("http://localhost:11434");
         assertThat(config.secrets().githubToken()).isEmpty();
+        assertThat(config.secrets().geminiApiKey()).isEmpty();
         assertThat(config.maxFilesPerRun()).isEqualTo(5);
     }
 
@@ -49,7 +52,8 @@ class ConfigLoaderTest {
         envValues.put(ConfigLoader.ENV_ORIGIN_URL, "https://example.com/origin.git");
         envValues.put(ConfigLoader.ENV_ORIGIN_BRANCH, "release");
         envValues.put(ConfigLoader.ENV_TRANSLATION_BRANCH_TEMPLATE, "sync-<upstream-short-sha>");
-        envValues.put(ConfigLoader.ENV_GEMINI_API_KEY, "gemini-key");
+        envValues.put(ConfigLoader.ENV_OLLAMA_BASE_URL, "http://ollama:11434");
+        envValues.put(ConfigLoader.ENV_LLM_MODEL, "custom-gguf");
         envValues.put(ConfigLoader.ENV_GITHUB_TOKEN, "github-token");
         envValues.put(ConfigLoader.ENV_MAX_FILES_PER_RUN, "2");
 
@@ -63,8 +67,10 @@ class ConfigLoaderTest {
         assertThat(config.originBranch()).isEqualTo("release");
         assertThat(config.translationBranchTemplate()).isEqualTo("sync-<upstream-short-sha>");
         assertThat(config.translationMode()).isEqualTo(TranslationMode.PRODUCTION);
-        assertThat(config.secrets().geminiApiKey()).contains("gemini-key");
+        assertThat(config.translatorConfig().baseUrl()).contains("http://ollama:11434");
+        assertThat(config.translatorConfig().modelName()).isEqualTo("custom-gguf");
         assertThat(config.secrets().githubToken()).contains("github-token");
+        assertThat(config.secrets().geminiApiKey()).isEmpty();
         assertThat(config.maxFilesPerRun()).isEqualTo(2);
     }
 
@@ -80,7 +86,6 @@ class ConfigLoaderTest {
 
         assertThat(config.dryRun()).isTrue();
         assertThat(config.translationMode()).isEqualTo(TranslationMode.DRY_RUN);
-        assertThat(config.secrets().geminiApiKey()).isEmpty();
         assertThat(config.secrets().githubToken()).isEmpty();
     }
 
@@ -95,7 +100,7 @@ class ConfigLoaderTest {
 
         assertThat(thrown)
                 .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("GEMINI_API_KEY");
+                .hasMessageContaining("GITHUB_TOKEN");
     }
 
     @Test
@@ -103,7 +108,6 @@ class ConfigLoaderTest {
         RecordingEnvironmentReader environmentReader = new RecordingEnvironmentReader(Map.of(
                 ConfigLoader.ENV_UPSTREAM_URL, "https://example.com/up.git",
                 ConfigLoader.ENV_ORIGIN_URL, "https://example.com/origin.git",
-                ConfigLoader.ENV_GEMINI_API_KEY, "gemini",
                 ConfigLoader.ENV_GITHUB_TOKEN, "github"));
         CliArguments cliArguments = CommandLine.populateCommand(new CliArguments(),
                 "--since", "abc123");

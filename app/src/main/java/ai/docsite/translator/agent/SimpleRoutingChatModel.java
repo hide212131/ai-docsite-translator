@@ -9,7 +9,7 @@ import dev.langchain4j.model.chat.response.ChatResponse;
 import java.util.List;
 
 /**
- * Temporary heuristic chat model that returns deterministic plans until Gemini integration is wired.
+ * Temporary heuristic chat model that returns deterministic plans until a real planner model is wired.
  */
 public class SimpleRoutingChatModel implements ChatModel {
 

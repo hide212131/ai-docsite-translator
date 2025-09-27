@@ -72,15 +72,23 @@ public class TranslationTaskPlanner {
                 continue;
             }
 
-            List<String> baseLines;
+            List<String> baseSourceLines;
             try {
-                baseLines = readLinesAtCommit(workflowResult.originDirectory(), workflowResult.originBaseCommitSha(), change.path());
+                baseSourceLines = readLinesAtCommit(workflowResult.upstreamDirectory(), workflowResult.baseUpstreamCommitSha(), change.path());
             } catch (IOException ex) {
-                LOGGER.warn("Failed to read base translation for {}: {}", change.path(), ex.getMessage());
-                baseLines = List.of();
+                LOGGER.warn("Failed to read base upstream content for {}: {}", change.path(), ex.getMessage());
+                baseSourceLines = List.of();
             }
 
-            TranslationTask task = planFromDiff(change.path(), baseLines, upstreamLines);
+            List<String> existingTranslationLines;
+            try {
+                existingTranslationLines = readLinesAtCommit(workflowResult.originDirectory(), workflowResult.originBaseCommitSha(), change.path());
+            } catch (IOException ex) {
+                LOGGER.warn("Failed to read existing translation for {}: {}", change.path(), ex.getMessage());
+                existingTranslationLines = List.of();
+            }
+
+            TranslationTask task = planFromDiff(change.path(), baseSourceLines, existingTranslationLines, upstreamLines);
             if (task != null) {
                 tasks.add(task);
             }
@@ -88,15 +96,18 @@ public class TranslationTaskPlanner {
         return tasks;
     }
 
-    private TranslationTask planFromDiff(String filePath, List<String> baseLines, List<String> sourceLines) {
-        EditList edits = computeEdits(baseLines, sourceLines);
+    private TranslationTask planFromDiff(String filePath,
+                                         List<String> baseSourceLines,
+                                         List<String> existingTranslationLines,
+                                         List<String> newSourceLines) {
+        EditList edits = computeEdits(baseSourceLines, newSourceLines);
         List<TranslationSegment> segments = segmentsFromEdits(edits);
         if (segments.isEmpty()) {
             return null;
         }
-        List<String> existingLines = alignExistingLines(baseLines, sourceLines, edits);
+        List<String> existingLines = alignExistingLines(existingTranslationLines, newSourceLines, edits);
         List<TranslationSegment> normalized = normalizeSegments(segments);
-        return new TranslationTask(filePath, sourceLines, existingLines, normalized);
+        return new TranslationTask(filePath, newSourceLines, existingLines, normalized);
     }
 
     private List<String> readLinesAtCommit(Path repositoryDir, String commitSha, String filePath) throws IOException {
@@ -193,8 +204,8 @@ public class TranslationTaskPlanner {
         return result;
     }
 
-    private List<String> alignExistingLines(List<String> baseLines, List<String> newLines, EditList edits) {
-        if (baseLines.isEmpty()) {
+    private List<String> alignExistingLines(List<String> existingTranslationLines, List<String> newLines, EditList edits) {
+        if (existingTranslationLines.isEmpty()) {
             List<String> blanks = new ArrayList<>(newLines.size());
             for (int i = 0; i < newLines.size(); i++) {
                 blanks.add("");
@@ -207,7 +218,7 @@ public class TranslationTaskPlanner {
         for (Edit edit : edits) {
             int unchanged = edit.getBeginB() - lastB;
             for (int i = 0; i < unchanged; i++) {
-                existing.add(lastA < baseLines.size() ? baseLines.get(lastA) : "");
+                existing.add(lastA < existingTranslationLines.size() ? existingTranslationLines.get(lastA) : "");
                 lastA++;
                 lastB++;
             }
@@ -223,7 +234,9 @@ public class TranslationTaskPlanner {
                     int lenB = edit.getLengthB();
                     for (int i = 0; i < lenB; i++) {
                         int baseIdx = edit.getBeginA() + i;
-                        String line = baseIdx < edit.getEndA() && baseIdx < baseLines.size() ? baseLines.get(baseIdx) : "";
+                        String line = baseIdx < edit.getEndA() && baseIdx < existingTranslationLines.size()
+                                ? existingTranslationLines.get(baseIdx)
+                                : "";
                         existing.add(line);
                     }
                     lastA = edit.getEndA();
@@ -235,7 +248,7 @@ public class TranslationTaskPlanner {
         }
 
         while (lastB < newLines.size()) {
-            String line = lastA < baseLines.size() ? baseLines.get(lastA) : "";
+            String line = lastA < existingTranslationLines.size() ? existingTranslationLines.get(lastA) : "";
             existing.add(line);
             lastA++;
             lastB++;

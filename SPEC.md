@@ -1,7 +1,7 @@
 # AI翻訳スクリプト 仕様書 (SPEC)
 
 ## 1. 概要
-本仕様書は、英語原文のドキュメントサイト（upstream）と日本語翻訳サイト（origin）の差分を検出し、LangChain4j＋Gemini を利用して翻訳し、日本語サイト向けの Pull Request を自動作成するスクリプト（以下「スクリプト」）の詳細仕様を定義する。GitHub Actions での定期実行およびローカル開発環境での検証を両立させる。
+本仕様書は、英語原文のドキュメントサイト（upstream）と日本語翻訳サイト（origin）の差分を検出し、LangChain4j 経由で Gemini または Ollama を利用して翻訳し、日本語サイト向けの Pull Request を自動作成するスクリプト（以下「スクリプト」）の詳細仕様を定義する。GitHub Actions での定期実行およびローカル開発環境での検証を両立させる。使用する LLM は環境変数で切り替え可能とし、デフォルトでは Ollama（モデル: lucas2024/hodachi-ezo-humanities-9b-gemma-2-it:q8_0）を利用する。
 
 ## 2. スコープ
 - upstream と origin の差分同期と翻訳処理
@@ -20,7 +20,8 @@
 - ビルドは Gradle の最新安定版を使用する。
 - Java 最新 LTS（例: Java 21）を使用し、LangChain4j v1.5.0 以上を採用する。
 - LangChain4j Agents チュートリアル（https://docs.langchain4j.dev/tutorials/agents）に準拠した Agentic アーキテクチャを採用する。
-- LLM は Gemini（API キーは GitHub Actions Secrets に格納）を使用する。
+- LLM は LangChain4j 経由で呼び出し、環境変数で指定したプロバイダ（`gemini` または `ollama`）に切り替え可能とする。未指定時はローカルの Ollama (lucas2024/hodachi-ezo-humanities-9b-gemma-2-it:q8_0) を利用し、GitHub Actions でも同構成を用いる。
+- LangChain4j の Gemini / Ollama コネクタはいずれも `modelName` を受け取るため、モデル選択は単一の `LLM_MODEL` 環境変数で管理する。
 - ネットワークアクセスや Secrets への参照は、GitHub Actions 上でのみ許可される前提とする。
 
 ## 5. 全体アーキテクチャ
@@ -30,7 +31,7 @@
   - `git`: upstream / origin のクローン、フェッチ、ブランチ操作、差分検出。
   - `diff`: 未翻訳ファイル特定、差分解析、行数調整（改行のみ判定と挿入／削除ユーティリティ含む）。
   - `agent`: LangChain4j Agents を用いたタスクオーケストレーションとツール定義。
-  - `translate`: LangChain4j/Gemini を呼び出し、文書翻訳と整形を行う。
+  - `translate`: LangChain4j を通じて Gemini または Ollama を呼び出し、文書翻訳と整形を行う。
   - `writer`: 翻訳結果の書き込み、行数補正、ファイル保存。
   - `pr`: PR 作成、本文生成、リンク挿入。
   - `cli`: エントリーポイント、コマンドライン引数解析、モード制御。
@@ -69,7 +70,10 @@
   - `--dry-run`（PR/Push を抑止）
   - `--translation-mode` (`production` | `dry-run` | `mock`) — 翻訳パイプラインの実行モード切替
 - Secrets / 環境変数
-  - `GEMINI_API_KEY`
+  - `LLM_PROVIDER`（任意、`gemini` | `ollama`。未指定時は `ollama`）
+  - `LLM_MODEL`（任意、LangChain4j の `modelName` に渡す識別子。未指定時はプロバイダに応じた既定値を使用）
+  - `GEMINI_API_KEY`（Gemini 選択時に必須）
+  - `OLLAMA_BASE_URL`（Ollama 選択時のみ任意で上書き可能）
   - GitHub Token (`GITHUB_TOKEN`) for PR creation
   - `TRANSLATION_TARGET_SHA`（任意、dev/テスト向けに短縮コミットハッシュを指定）
   - `TRANSLATION_MODE`（任意、CLI 未指定時の翻訳モード既定値）
@@ -90,7 +94,7 @@
 7. 追加行の翻訳キュー投入: upstream 側で新規に追加された行で既存訳に対応する行が存在しない場合、`DiffAnalyzer` が新規追加領域を検知し、`TranslationTaskPlanner` が該当行を追加セグメントとして翻訳タスクへ組み込む。既存訳がない領域は常に翻訳対象とし、コンフリクトの有無に依らず差分を埋める。
 8. 行数補正: 原文と翻訳ファイルの行数が異なる場合、`LineStructureAnalyzer` が空行／ホワイトスペース／コンテンツ行の連続区間を抽出し、`LineStructureAdjuster` がそのメタデータを基に不足行を補完して行数を一致させる。将来的に LLM ベースの調整へ拡張できるよう、Analyzer→Adjuster の責務を分離する。
 9. 翻訳処理:
-   - `TranslatorFactory` が `TranslationMode` に応じてプロダクション／ドライラン／モックの訳出パスを選択し、LangChain4j/Gemini 実装を差し替え可能にする。
+  - `TranslatorFactory` が `TranslationMode` に応じてプロダクション／ドライラン／モックの訳出パスを選択し、`LLM_PROVIDER` 設定（`gemini` | `ollama`）に基づいて LangChain4j 経由の翻訳クライアントを差し替え可能にする。
    - `TranslationTask` 単位で翻訳セグメントを生成し、`LineStructureFormatter` で行構造を整えた上で既存訳へマージする。
    - 翻訳済み部分とのマージ方針: 新規差分のみ追記または必要箇所の再翻訳。
    - 原文の軽微修正（誤字等）と判断した差分はスキップ可能とする判定ロジックを実装。
@@ -117,7 +121,7 @@
 - `DiffAnalyzer`: 差分抽出、ファイル状態判定。
 - `ConflictDetector` / `ConflictResolutionPlanner`: マージコンフリクトを検出し、既存訳をベースに差分箇所のみを再翻訳するパッチプランを生成（コンフリクト以外の追加行は `DiffAnalyzer`/`TranslationTaskPlanner` が補完）。
 - `LineAligner`: `LineStructureAnalyzer`（改行状況の計測）と `LineStructureAdjuster`（改行挿入・削除の実行）を提供し、Analyzer の結果を LLM に渡して Adjuster パラメータを導出する。
-- `TranslationService` / `TranslatorFactory` / `Translator`: LangChain4j/Gemini をラップし、モードごとの翻訳処理と行構造整形 (`LineStructureFormatter`) を担う。
+- `TranslationService` / `TranslatorFactory` / `Translator`: LangChain4j をラップし、Gemini と Ollama の両方に対応した翻訳処理と行構造整形 (`LineStructureFormatter`) を担う。
 - `TranslationTask` / `TranslationSegment`: 翻訳対象ドキュメントと差分セグメントを表現し、既存訳へのマージと差分限定翻訳を制御。
 - `CommitService`: コミット/ブランチ操作。
 - `PullRequestService`: PR 作成 API 呼び出し。
@@ -125,13 +129,16 @@
 
 ## 10. 外部インターフェース
 - GitHub REST API / GraphQL API (PR 作成、リポジトリ操作) — `GITHUB_TOKEN`
-- Gemini API (LangChain4j 経由)
+- Ollama API / Gemini API (いずれも LangChain4j 経由)
 - ローカルファイルシステム（翻訳ファイル出力）
 
 ## 11. 設定と Secrets
 | 項目 | 説明 | 必須 | 既定値 |
 | --- | --- | --- | --- |
-| `GEMINI_API_KEY` | Gemini API キー | 必須 | なし |
+| `LLM_PROVIDER` | 利用する LLM プロバイダ (`gemini` | `ollama`) | 任意 | `ollama` |
+| `GEMINI_API_KEY` | Gemini API キー | Gemini 利用時は必須 | なし |
+| `LLM_MODEL` | LangChain4j の `modelName` に渡す識別子 | 任意 | `LLM_PROVIDER` が `gemini` の場合は `models/gemini-1.5-pro-latest`、`ollama` の場合は `lucas2024/hodachi-ezo-humanities-9b-gemma-2-it:q8_0` |
+| `OLLAMA_BASE_URL` | Ollama のベース URL | 任意 | `http://localhost:11434` |
 | `GITHUB_TOKEN` | PR 作成・push 用 Token | 必須 | なし |
 | `TRANSLATION_BRANCH_TEMPLATE` | 翻訳ブランチ名テンプレート | 任意 | `sync-<upstream-short-sha>` |
 | `TRANSLATION_FILE_EXTENSIONS` | 翻訳対象拡張子 | 任意 | `.md,.mdx,.txt,.html` |
@@ -154,6 +161,7 @@
 - `TRANSLATION_TARGET_SHA` を設定すると優先対象コミットを強制指定でき、統合テストや再現テストで複数コミットを切り替えて検証できるようにする。
 
 ## 14. ログ出力フォーマット
+- ログはデフォルトで `build/logs/translator.log` に出力し、`LOG_DIR` / `LOG_FILE` 環境変数で保存先とファイル名を上書きできる。
 - JSON 形式とテキスト形式の切替をサポート（デフォルト: テキスト）。
 - 主要イベント: リポジトリ同期開始/終了、差分件数、翻訳 API 呼出時間、コミット ID、PR URL。
 

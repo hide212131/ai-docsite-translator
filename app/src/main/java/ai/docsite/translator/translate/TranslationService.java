@@ -65,11 +65,27 @@ public class TranslationService {
         segments.sort(Comparator.comparingInt(TranslationSegment::startLine));
 
         for (TranslationSegment segment : segments) {
+            LOGGER.info("Translating {} lines {}-{}", task.filePath(), segment.startLine(), segment.endLineExclusive());
             List<String> sourceSlice = new ArrayList<>(task.sourceLines().subList(segment.startLine(), segment.endLineExclusive()));
             List<String> rawTranslation = translateWithRetry(translator, sourceSlice);
-            List<String> formatted = formatter.format(sourceSlice, rawTranslation);
+            LOGGER.info("Translator returned {} lines for {} segment {}-{}", rawTranslation.size(), task.filePath(), segment.startLine(), segment.endLineExclusive());
+            if (!rawTranslation.isEmpty()) {
+            LOGGER.debug("Translation output for {} segment {}-{}:\n{}", task.filePath(), segment.startLine(), segment.endLineExclusive(), String.join("\n", rawTranslation));
+            }
+            List<String> formatted;
+            if (rawTranslation.size() == sourceSlice.size()) {
+                formatted = new ArrayList<>(rawTranslation);
+            } else {
+                formatted = formatter.format(sourceSlice, rawTranslation);
+                if (formatted.size() != sourceSlice.size()) {
+                    LOGGER.warn("Formatted output line count {} does not match source {} for {} segment {}-{}; falling back to normalized translation", formatted.size(), sourceSlice.size(), task.filePath(), segment.startLine(), segment.endLineExclusive());
+                    formatted = normalizeTranslation(rawTranslation, sourceSlice.size());
+                }
+            }
+            LOGGER.debug("Formatted output for {} segment {}-{}:\n{}", task.filePath(), segment.startLine(), segment.endLineExclusive(), String.join("\n", formatted));
             boolean emptyOutput = formatted.isEmpty() || formatted.stream().allMatch(String::isBlank);
             if (emptyOutput) {
+                LOGGER.warn("Received blank translation for {} segment {}-{}; falling back to source", task.filePath(), segment.startLine(), segment.endLineExclusive());
                 formatted = sourceSlice;
             }
             replaceRange(translated, segment.startLine(), segment.endLineExclusive(), formatted);
@@ -95,6 +111,21 @@ public class TranslationService {
             target.remove(safeStart);
         }
         target.addAll(safeStart, replacement);
+    }
+
+    private List<String> normalizeTranslation(List<String> translation, int expectedSize) {
+        List<String> normalized = new ArrayList<>(expectedSize);
+        if (translation == null) {
+            translation = List.of();
+        }
+        for (int i = 0; i < expectedSize; i++) {
+            if (i < translation.size()) {
+                normalized.add(translation.get(i));
+            } else {
+                normalized.add("");
+            }
+        }
+        return normalized;
     }
 
     private List<String> translateWithRetry(Translator translator, List<String> sourceLines) {

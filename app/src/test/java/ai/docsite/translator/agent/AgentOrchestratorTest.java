@@ -3,8 +3,10 @@ package ai.docsite.translator.agent;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import ai.docsite.translator.config.Config;
+import ai.docsite.translator.config.LlmProvider;
 import ai.docsite.translator.config.Mode;
 import ai.docsite.translator.config.Secrets;
+import ai.docsite.translator.config.TranslatorConfig;
 import ai.docsite.translator.diff.ChangeCategory;
 import ai.docsite.translator.diff.DiffMetadata;
 import ai.docsite.translator.diff.FileChange;
@@ -87,6 +89,7 @@ class AgentOrchestratorTest {
                 Optional.empty(),
                 dryRun,
                 dryRun ? TranslationMode.DRY_RUN : TranslationMode.PRODUCTION,
+                new TranslatorConfig(LlmProvider.OLLAMA, "lucas2024/hodachi-ezo-humanities-9b-gemma-2-it:q8_0", Optional.of("http://localhost:11434")),
                 new Secrets(Optional.empty(), Optional.empty()),
                 Optional.empty(),
                 0);
@@ -96,7 +99,7 @@ class AgentOrchestratorTest {
         DiffMetadata metadata = new DiffMetadata(List.of(
                 new FileChange("docs/new.md", ChangeCategory.DOCUMENT_NEW),
                 new FileChange("README.md", ChangeCategory.DOCUMENT_UPDATED)));
-        return new GitWorkflowResult(Path.of("up"), Path.of("origin"), "sync-abc1234", "abcdef0123456789", "abc1234", "deadbeef", metadata, MergeStatus.MERGED);
+        return new GitWorkflowResult(Path.of("up"), Path.of("origin"), "sync-abc1234", "abcdef0123456789", "abc1234", "abc0000", "deadbeef", metadata, MergeStatus.MERGED);
     }
 
     private static final class TranslationServiceSpy extends TranslationService {
