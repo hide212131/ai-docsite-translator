@@ -90,7 +90,9 @@ runs:
         fi
 
         printf 'Running with arguments:\n%s\n' "${args[*]}"
-        ./gradlew :app:run --args "$(printf '%q ' "${args[@]}")"
+        args_str="$(printf '%q ' "${args[@]}")"
+        args_str="${args_str% }"
+        ./gradlew :app:run --args="${args_str}"
 
 branding:
   icon: "book"
