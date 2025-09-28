@@ -13,10 +13,17 @@ GitHubにあるドキュメント構築サイトリポジトリ内の英語文�
 ### 使用方法
 日本語サイトの GitHub Actionsにて一定期間ごとに発動するジョブを作成し、スクリプトを動作させる。
 ジョブの作業内容：
-- スクリプトが置かれているリポジトリをcloneして取得する
+- スクリプトが置かれているリポジトリをcloneして取得する（または `uses: <owner>/ai-docsite-translator@v1` 形式の専用アクションとして呼び出す）
 - その後、スクリプトにupsteramとoriginを与えて実行する
 - 翻訳処理が実施され、翻訳結果があるブランチとPRがoriginに送られる
 - orignで人間が翻訳チェックし、origin/mainにマージする
+
+#### GitHub Actions アクション化の要件
+- スクリプトリポジトリは `action.yml` を提供し、Composite Action として `uses:` で利用できるようにする。
+- アクションの利用者は翻訳対象リポジトリを `actions/checkout` 済みであることが前提。
+- アクションの入力（例: `upstream-url`, `origin-url`, `mode`, `dry-run`, `translation-mode`, `limit`, `log-format`, `extra-args`）を通じて CLI の挙動を制御できること。
+- ランナー上で Java 21（Temurin）をセットアップし、`./gradlew :app:run --args "..."` をアクション内部で実行する。
+- `GITHUB_TOKEN`, `LLM_PROVIDER`, `LLM_MODEL`, `GEMINI_API_KEY`, `OLLAMA_BASE_URL` など必要な Secrets / 環境変数は利用元ワークフローから `env:` または `secrets:` で注入して使用する。
 
 ## スクリプトの翻訳処理内容
 ### 概要

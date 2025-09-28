@@ -59,6 +59,32 @@
    - b. 既存文書ファイルの変更: 新規英文追加（b-1）と翻訳済み領域の更新（b-2）を区別し、必要に応じて差分のみ翻訳または再翻訳する。
    - c. 文書ファイル以外（設定ファイル等）: 翻訳対象外として現状維持する。
 
+### 6.4 GitHub Actions 用アクション定義
+- スクリプトリポジトリのルートに `action.yml`（Composite Action）を配置し、`uses: <owner>/ai-docsite-translator@v1` 形式で呼び出せるようにする。リリースタグ（例: `v1`）管理方針はリリースノートと合わせて運用する。
+- アクションはワークフロー側で対象リポジトリを `actions/checkout` した後に実行されることを想定し、翻訳対象リポジトリとアクションのワークスペースが同一ランナー上に存在する前提を置く。
+- `inputs` で CLI オプションをラップし、未指定時は CLI のデフォルトと同じ値を使う。
+
+  | 入力名 | 必須 | 既定値 | CLI/挙動 |
+  | --- | --- | --- | --- |
+  | `upstream-url` | 必須 | なし | `--upstream-url` に転送。 |
+  | `origin-url` | 必須 | なし | `--origin-url` に転送。 |
+  | `origin-branch` | 任意 | `main` | `--origin-branch`。 |
+  | `translation-branch-template` | 任意 | `sync-<upstream-short-sha>` | `--translation-branch-template`。 |
+  | `mode` | 任意 | `batch` | `--mode`。`dev` 指定時は `since` との併用を許可。 |
+  | `since` | 任意 | 空 | `--since`。空の場合は付与しない。 |
+  | `dry-run` | 任意 | `false` | `true` の場合のみ `--dry-run` を付与。 |
+  | `translation-mode` | 任意 | `production` | `--translation-mode`。 |
+  | `limit` | 任意 | 空 | `--limit`。空の場合は付与しない。 |
+  | `log-format` | 任意 | `text` | `--log-format`。 |
+  | `extra-args` | 任意 | 空 | 任意の追加引数を末尾に連結。 |
+
+- Composite Action のステップ構成
+  1. `actions/setup-java@v4` を用いて Temurin/JDK 21 をインストール。
+  2. `working-directory: ${{ github.action_path }}` で `chmod +x ./gradlew` を実施し、Wrapper 実行権限を保証。
+  3. 生成した引数列を用いて `./gradlew :app:run --args "..."` を実行する。`github.action_path` 配下で実行し、成果物（ログ・翻訳結果）は呼び出し元リポジトリのワークスペースに書き込まれる。
+- アクションは Secrets / 環境変数を直接マスクしない。利用側ワークフローで `env:` や `secrets:` に設定された `GITHUB_TOKEN`, `LLM_PROVIDER`, `LLM_MODEL`, `GEMINI_API_KEY`, `OLLAMA_BASE_URL`, `MAX_FILES_PER_RUN`, `TRANSLATION_TARGET_SHA` などをそのまま受け取って CLI へ渡す。必須値（`GITHUB_TOKEN` など）が未設定の場合は既存のバリデーションがエラーを返す。
+- README / ドキュメントには `actions/checkout` → `uses: <owner>/ai-docsite-translator@v1` → 必要な `env`/`secrets` 設定 という実行例を掲載し、`extra-args` で CLI 拡張オプションを渡せる旨を明記する。
+
 ## 7. 機能要件
 ### 7.1 入力
 - CLI オプション

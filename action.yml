@@ -1,0 +1,97 @@
+name: "AI Docsite Translator"
+description: "Run the ai-docsite-translator CLI as a reusable GitHub Action"
+author: "ai-docsite-translator maintainers"
+inputs:
+  upstream-url:
+    description: "URL of the upstream (source) repository"
+    required: true
+  origin-url:
+    description: "URL of the origin (translation) repository"
+    required: true
+  origin-branch:
+    description: "Branch on the origin repository to base sync branches from"
+    required: false
+    default: "main"
+  translation-branch-template:
+    description: "Template for generated translation branch names"
+    required: false
+    default: "sync-<upstream-short-sha>"
+  mode:
+    description: "Execution mode for the CLI (batch or dev)"
+    required: false
+    default: "batch"
+  since:
+    description: "Reference revision to scope translations when running in dev mode"
+    required: false
+    default: ""
+  dry-run:
+    description: "If true, run without committing, pushing, or creating PRs"
+    required: false
+    default: "false"
+  translation-mode:
+    description: "Translation mode for the CLI (production, dry-run, or mock)"
+    required: false
+    default: "production"
+  limit:
+    description: "Maximum number of documents to translate in a run"
+    required: false
+    default: ""
+  log-format:
+    description: "Log format for CLI output (text or json)"
+    required: false
+    default: "text"
+  extra-args:
+    description: "Additional CLI arguments appended verbatim"
+    required: false
+    default: ""
+runs:
+  using: "composite"
+  steps:
+    - name: Set up Java
+      uses: actions/setup-java@v4
+      with:
+        distribution: temurin
+        java-version: '21'
+
+    - name: Run translator
+      shell: bash
+      working-directory: ${{ github.action_path }}
+      run: |
+        set -euo pipefail
+        chmod +x ./gradlew
+        args=(
+          "--upstream-url" "${{ inputs.upstream-url }}"
+          "--origin-url" "${{ inputs.origin-url }}"
+          "--origin-branch" "${{ inputs.origin-branch }}"
+          "--translation-branch-template" "${{ inputs.translation-branch-template }}"
+          "--mode" "${{ inputs.mode }}"
+          "--log-format" "${{ inputs.log-format }}"
+        )
+
+        if [[ -n "${{ inputs.translation-mode }}" ]]; then
+          args+=("--translation-mode" "${{ inputs.translation-mode }}")
+        fi
+
+        if [[ -n "${{ inputs.limit }}" ]]; then
+          args+=("--limit" "${{ inputs.limit }}")
+        fi
+
+        if [[ -n "${{ inputs.since }}" ]]; then
+          args+=("--since" "${{ inputs.since }}")
+        fi
+
+        if [[ "${{ inputs.dry-run }}" == "true" ]]; then
+          args+=("--dry-run")
+        fi
+
+        if [[ -n "${{ inputs.extra-args }}" ]]; then
+          read -r -a extra_args <<< "${{ inputs.extra-args }}"
+          args+=("${extra_args[@]}")
+        fi
+
+        printf 'Running with arguments:\n%s\n' "${args[*]}"
+        ./gradlew :app:run --args "$(printf '%q ' "${args[@]}")"
+
+branding:
+  icon: "book"
+  color: "blue"
