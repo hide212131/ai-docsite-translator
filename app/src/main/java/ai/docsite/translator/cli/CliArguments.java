@@ -1,5 +1,6 @@
 package ai.docsite.translator.cli;
 
+import ai.docsite.translator.config.LogFormat;
 import ai.docsite.translator.config.Mode;
 import ai.docsite.translator.translate.TranslationMode;
 import java.net.URI;
@@ -35,6 +36,9 @@ public class CliArguments {
     @CommandLine.Option(names = "--limit", description = "Maximum number of documents to translate in this run", paramLabel = "COUNT")
     private Integer translationLimit;
 
+    @CommandLine.Option(names = "--log-format", description = "Log format: text or json", converter = LogFormatConverter.class)
+    private LogFormat logFormat;
+
     public Mode mode() {
         return mode;
     }
@@ -69,5 +73,9 @@ public class CliArguments {
 
     public Integer translationLimit() {
         return translationLimit;
+    }
+
+    public LogFormat logFormat() {
+        return logFormat;
     }
 }

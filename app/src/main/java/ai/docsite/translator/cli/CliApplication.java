@@ -9,8 +9,10 @@ import ai.docsite.translator.config.ConfigLoader;
 import ai.docsite.translator.config.Secrets;
 import ai.docsite.translator.config.SystemEnvironmentReader;
 import ai.docsite.translator.config.TranslatorConfig;
+import ai.docsite.translator.git.CommitService;
 import ai.docsite.translator.git.GitWorkflowResult;
 import ai.docsite.translator.git.GitWorkflowService;
+import ai.docsite.translator.logging.LoggingConfigurator;
 import ai.docsite.translator.pr.PullRequestComposer;
 import ai.docsite.translator.pr.PullRequestService;
 import ai.docsite.translator.translate.ChatModelTranslator;
@@ -73,6 +75,7 @@ public final class CliApplication {
         }
 
         Config config = configLoader.load(cliArguments);
+        LoggingConfigurator.configure(config.logFormat());
         LOGGER.info("Running in {} mode (dryRun={}): upstream={} origin={}",
                 config.mode(), config.dryRun(), config.upstreamUrl(), config.originUrl());
 
@@ -80,9 +83,11 @@ public final class CliApplication {
         PullRequestService pullRequestService = new PullRequestService(new PullRequestComposer());
         TranslationTaskPlanner taskPlanner = new TranslationTaskPlanner();
         DocumentWriter documentWriter = new DocumentWriter();
+        CommitService commitService = new CommitService();
         AgentFactory agentFactory = new AgentFactory(new SimpleRoutingChatModel(), translationService, pullRequestService,
                 new DefaultLineStructureAnalyzer(), new DefaultLineStructureAdjuster());
-        AgentOrchestrator agentOrchestrator = new AgentOrchestrator(agentFactory, translationService, pullRequestService, taskPlanner, documentWriter);
+        AgentOrchestrator agentOrchestrator = new AgentOrchestrator(agentFactory, translationService, pullRequestService,
+                taskPlanner, documentWriter, commitService);
 
         GitWorkflowResult workflowResult = gitWorkflowService.prepareSyncBranch(config);
         if (!workflowResult.translationBranch().isEmpty()) {
@@ -92,6 +97,13 @@ public final class CliApplication {
         }
         AgentRunResult runResult = agentOrchestrator.run(config, workflowResult);
         LOGGER.info("Agent plan: {}", runResult.planSummary());
+        if (!runResult.conflictFailures().isEmpty()) {
+            LOGGER.warn("Auto-resolution skipped for conflicted files: {}", String.join(", ", runResult.conflictFailures()));
+        }
+        if (!runResult.translationFailures().isEmpty()) {
+            LOGGER.warn("Translation failed for files: {}", String.join(", ", runResult.translationFailures()));
+        }
+        runResult.commitSha().ifPresent(sha -> LOGGER.info("Translation commit: {}", sha));
         return 0;
     }
 

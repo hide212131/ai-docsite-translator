@@ -124,6 +124,24 @@ class TranslationTaskPlannerTest {
         assertThat(planner.plan(result, 5)).isEmpty();
     }
 
+    @Test
+    void detectsConflictMarkersAndRecordsWarning() throws Exception {
+        RepoInfo upstream = createRepo(tempDir.resolve("up-conflict"), "docs/conflict.md", "Base\n");
+        String baseSha = upstream.sha();
+        upstream.updateFile("docs/conflict.md", "<<<<<<< HEAD\nours\n=======\ntheirs\n>>>>>>> branch\n");
+        RepoInfo origin = createRepo(tempDir.resolve("origin-conflict"), "docs/conflict.md", "Base\n");
+
+        DiffMetadata metadata = new DiffMetadata(List.of(new FileChange("docs/conflict.md", ChangeCategory.DOCUMENT_UPDATED)));
+        GitWorkflowResult result = new GitWorkflowResult(upstream.path(), origin.path(),
+                "sync-" + upstream.shortSha(), upstream.sha(), upstream.shortSha(), baseSha, origin.sha(), metadata, MergeStatus.MERGED);
+
+        TranslationTaskPlanner planner = new TranslationTaskPlanner();
+        TranslationTaskPlanner.PlanResult planResult = planner.planWithDiagnostics(result, 0);
+
+        assertThat(planResult.tasks()).isEmpty();
+        assertThat(planResult.conflictFiles()).containsExactly("docs/conflict.md");
+    }
+
     private RepoInfo createRepo(Path directory, String filePath, String content) throws Exception {
         Files.createDirectories(directory);
         try (Git git = Git.init().setDirectory(directory.toFile()).call()) {

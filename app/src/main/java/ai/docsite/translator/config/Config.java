@@ -21,6 +21,7 @@ public record Config(
         Optional<String> since,
         boolean dryRun,
         TranslationMode translationMode,
+        LogFormat logFormat,
         TranslatorConfig translatorConfig,
         Secrets secrets,
         Optional<String> translationTargetSha,
@@ -43,6 +44,7 @@ public record Config(
         }
         since = since == null ? Optional.empty() : since;
         translationMode = Objects.requireNonNull(translationMode, "translationMode");
+        logFormat = Objects.requireNonNull(logFormat, "logFormat");
         translatorConfig = Objects.requireNonNull(translatorConfig, "translatorConfig");
         secrets = Objects.requireNonNull(secrets, "secrets");
         translationTargetSha = translationTargetSha == null ? Optional.empty() : translationTargetSha;

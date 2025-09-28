@@ -4,6 +4,7 @@ import ai.docsite.translator.diff.ChangeCategory;
 import ai.docsite.translator.diff.DiffMetadata;
 import ai.docsite.translator.diff.FileChange;
 import ai.docsite.translator.git.GitWorkflowResult;
+import ai.docsite.translator.translate.conflict.ConflictDetector;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
@@ -12,6 +13,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Objects;
@@ -42,15 +44,18 @@ public class TranslationTaskPlanner {
     public TranslationTaskPlanner() {
     }
 
-    public List<TranslationTask> plan(GitWorkflowResult workflowResult, int maxFilesPerRun) {
+    public PlanResult planWithDiagnostics(GitWorkflowResult workflowResult, int maxFilesPerRun) {
         Objects.requireNonNull(workflowResult, "workflowResult");
         DiffMetadata metadata = workflowResult.diffMetadata();
         if (metadata.changes().isEmpty()) {
-            return List.of();
+            return new PlanResult(List.of(), List.of(), List.of());
         }
 
         List<TranslationTask> tasks = new ArrayList<>();
+        List<String> conflictFiles = new ArrayList<>();
+        List<String> upstreamReadFailures = new ArrayList<>();
         int limit = maxFilesPerRun <= 0 ? Integer.MAX_VALUE : maxFilesPerRun;
+        ConflictDetector conflictDetector = new ConflictDetector();
 
         for (FileChange change : metadata.changes()) {
             if (tasks.size() >= limit) {
@@ -65,10 +70,17 @@ public class TranslationTaskPlanner {
                 upstreamLines = readLinesAtCommit(workflowResult.upstreamDirectory(), workflowResult.targetCommitSha(), change.path());
             } catch (IOException ex) {
                 LOGGER.warn("Skipping {} due to upstream read failure: {}", change.path(), ex.getMessage());
+                upstreamReadFailures.add(change.path());
                 continue;
             }
             if (upstreamLines.isEmpty()) {
                 // File removed or not present in upstream commit, nothing to translate.
+                continue;
+            }
+
+            if (conflictDetector.detect(upstreamLines).isPresent()) {
+                LOGGER.warn("Detected unresolved merge conflict markers in {}; skipping automatic translation", change.path());
+                conflictFiles.add(change.path());
                 continue;
             }
 
@@ -93,7 +105,11 @@ public class TranslationTaskPlanner {
                 tasks.add(task);
             }
         }
-        return tasks;
+        return new PlanResult(List.copyOf(tasks), List.copyOf(conflictFiles), List.copyOf(upstreamReadFailures));
+    }
+
+    public List<TranslationTask> plan(GitWorkflowResult workflowResult, int maxFilesPerRun) {
+        return planWithDiagnostics(workflowResult, maxFilesPerRun).tasks();
     }
 
     private TranslationTask planFromDiff(String filePath,
@@ -261,5 +277,27 @@ public class TranslationTaskPlanner {
             return new ArrayList<>(existing.subList(0, newLines.size()));
         }
         return existing;
+    }
+
+    public record PlanResult(List<TranslationTask> tasks,
+                             List<String> conflictFiles,
+                             List<String> upstreamReadFailures) {
+
+        public PlanResult {
+            tasks = List.copyOf(tasks);
+            conflictFiles = List.copyOf(conflictFiles);
+            upstreamReadFailures = List.copyOf(upstreamReadFailures);
+        }
+
+        public List<String> plannedFilePaths() {
+            if (tasks.isEmpty()) {
+                return List.of();
+            }
+            List<String> files = new ArrayList<>(tasks.size());
+            for (TranslationTask task : tasks) {
+                files.add(task.filePath());
+            }
+            return Collections.unmodifiableList(files);
+        }
     }
 }

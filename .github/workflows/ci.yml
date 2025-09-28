@@ -1,0 +1,64 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+          cache: gradle
+
+      - name: Grant execute permission
+        run: chmod +x gradlew
+
+      - name: Build
+        run: ./gradlew build --stacktrace
+
+      - name: Smoke test CLI dry-run
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config --global user.email "ci@example.com"
+          git config --global user.name "CI"
+          TMP_ROOT="$(mktemp -d)"
+          UPSTREAM_BARE="$TMP_ROOT/upstream.git"
+          ORIGIN_BARE="$TMP_ROOT/origin.git"
+
+          git init --bare "$UPSTREAM_BARE"
+          git init "$TMP_ROOT/upstream-work"
+          pushd "$TMP_ROOT/upstream-work" > /dev/null
+          git checkout -b main
+          mkdir -p docs
+          echo "Base" > docs/example.md
+          git add docs/example.md
+          git commit -m "init"
+          git remote add origin "$UPSTREAM_BARE"
+          git push origin main
+          popd > /dev/null
+
+          git init --bare "$ORIGIN_BARE"
+          git clone "$UPSTREAM_BARE" "$TMP_ROOT/origin-work" > /dev/null
+          pushd "$TMP_ROOT/origin-work" > /dev/null
+          git remote set-url origin "$ORIGIN_BARE"
+          git push origin main
+          popd > /dev/null
+
+          git clone "$UPSTREAM_BARE" "$TMP_ROOT/upstream-update" > /dev/null
+          pushd "$TMP_ROOT/upstream-update" > /dev/null
+          echo "New" >> docs/example.md
+          git commit -am "update docs"
+          git push origin main
+          popd > /dev/null
+
+          ./gradlew run --args="--mode batch --dry-run --upstream-url file://$UPSTREAM_BARE --origin-url file://$ORIGIN_BARE"

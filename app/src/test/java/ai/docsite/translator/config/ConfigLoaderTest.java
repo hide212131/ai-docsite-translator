@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.catchThrowable;
 
 import ai.docsite.translator.cli.CliArguments;
+import ai.docsite.translator.config.LogFormat;
 import ai.docsite.translator.translate.TranslationMode;
 import java.net.URI;
 import java.util.ArrayList;
@@ -26,7 +27,8 @@ class ConfigLoaderTest {
                 "--translation-branch-template", "custom-sync-<upstream-short-sha>",
                 "--since", "abc123",
                 "--dry-run",
-                "--limit", "5");
+                "--limit", "5",
+                "--log-format", "json");
 
         Config config = new ConfigLoader(key -> Optional.empty()).load(cliArguments);
 
@@ -37,6 +39,7 @@ class ConfigLoaderTest {
         assertThat(config.since()).contains("abc123");
         assertThat(config.dryRun()).isTrue();
         assertThat(config.translationMode()).isEqualTo(TranslationMode.DRY_RUN);
+        assertThat(config.logFormat()).isEqualTo(LogFormat.JSON);
         assertThat(config.translatorConfig().provider()).isEqualTo(LlmProvider.OLLAMA);
         assertThat(config.translatorConfig().modelName()).isEqualTo("lucas2024/hodachi-ezo-humanities-9b-gemma-2-it:q8_0");
         assertThat(config.translatorConfig().baseUrl()).contains("http://localhost:11434");
@@ -60,6 +63,7 @@ class ConfigLoaderTest {
         envValues.put(ConfigLoader.ENV_MAX_FILES_PER_RUN, "2");
         envValues.put(ConfigLoader.ENV_TRANSLATION_INCLUDE_PATHS, "docs,docs/releases");
         envValues.put(ConfigLoader.ENV_DOCUMENT_EXTENSIONS, ".md,.mdx");
+        envValues.put(ConfigLoader.ENV_LOG_FORMAT, "json");
 
         RecordingEnvironmentReader environmentReader = new RecordingEnvironmentReader(envValues);
         CliArguments cliArguments = CommandLine.populateCommand(new CliArguments());
@@ -71,6 +75,7 @@ class ConfigLoaderTest {
         assertThat(config.originBranch()).isEqualTo("release");
         assertThat(config.translationBranchTemplate()).isEqualTo("sync-<upstream-short-sha>");
         assertThat(config.translationMode()).isEqualTo(TranslationMode.PRODUCTION);
+        assertThat(config.logFormat()).isEqualTo(LogFormat.JSON);
         assertThat(config.translatorConfig().baseUrl()).contains("http://ollama:11434");
         assertThat(config.translatorConfig().modelName()).isEqualTo("custom-gguf");
         assertThat(config.secrets().githubToken()).contains("github-token");

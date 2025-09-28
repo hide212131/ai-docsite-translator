@@ -47,7 +47,7 @@ public class AgentFactory {
         tools.add(new DiffTool(workflowResult.diffMetadata()));
         tools.add(new LineStructureAdjusterTool(lineStructureAnalyzer, lineStructureAdjuster));
         tools.add(new TranslationTool(translationService, workflowResult.diffMetadata()));
-        tools.add(new PullRequestTool(pullRequestService, workflowResult));
+        tools.add(new PullRequestTool(pullRequestService, workflowResult, config));
 
         return AgenticServices.agentBuilder(TranslationAgent.class)
                 .chatModel(chatModel)

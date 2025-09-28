@@ -33,6 +33,7 @@ public class ConfigLoader {
     static final String ENV_GEMINI_API_KEY = "GEMINI_API_KEY";
     static final String ENV_TRANSLATION_INCLUDE_PATHS = "TRANSLATION_INCLUDE_PATHS";
     static final String ENV_DOCUMENT_EXTENSIONS = "TRANSLATION_DOCUMENT_EXTENSIONS";
+    static final String ENV_LOG_FORMAT = "LOG_FORMAT";
 
     private static final String DEFAULT_ORIGIN_BRANCH = "main";
     private static final String DEFAULT_BRANCH_TEMPLATE = "sync-<upstream-short-sha>";
@@ -49,6 +50,7 @@ public class ConfigLoader {
         Mode mode = resolveMode(arguments);
         boolean dryRun = resolveDryRun(arguments);
         TranslationMode translationMode = resolveTranslationMode(arguments, dryRun);
+        LogFormat logFormat = resolveLogFormat(arguments);
 
         URI upstreamUrl = resolveUri(arguments.upstreamUrl(), ENV_UPSTREAM_URL, "upstream repository url must be provided");
         URI originUrl = resolveUri(arguments.originUrl(), ENV_ORIGIN_URL, "origin repository url must be provided");
@@ -109,7 +111,7 @@ public class ConfigLoader {
         TranslatorConfig translatorConfig = new TranslatorConfig(provider, modelName, baseUrl);
 
         return new Config(mode, upstreamUrl, originUrl, originBranch, translationBranchTemplate, since, dryRun,
-                translationMode, translatorConfig, secrets, translationTargetSha, maxFilesPerRun, includePaths, documentExtensions);
+                translationMode, logFormat, translatorConfig, secrets, translationTargetSha, maxFilesPerRun, includePaths, documentExtensions);
     }
 
     private String defaultModelFor(LlmProvider provider) {
@@ -147,6 +149,17 @@ public class ConfigLoader {
         return environmentReader.get(ENV_TRANSLATION_MODE)
                 .map(TranslationMode::from)
                 .orElse(dryRun ? TranslationMode.DRY_RUN : TranslationMode.PRODUCTION);
+    }
+
+    private LogFormat resolveLogFormat(CliArguments arguments) {
+        LogFormat cliFormat = arguments.logFormat();
+        if (cliFormat != null) {
+            return cliFormat;
+        }
+        return environmentReader.get(ENV_LOG_FORMAT)
+                .filter(ConfigLoader::isNotBlank)
+                .map(LogFormat::from)
+                .orElse(LogFormat.TEXT);
     }
 
     private int resolveMaxFilesPerRun(CliArguments arguments) {

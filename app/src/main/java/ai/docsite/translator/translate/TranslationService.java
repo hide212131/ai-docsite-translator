@@ -43,14 +43,20 @@ public class TranslationService {
 
     public TranslationOutcome translate(List<TranslationTask> tasks, TranslationMode mode) {
         if (tasks == null || tasks.isEmpty()) {
-            return new TranslationOutcome(List.of());
+            return new TranslationOutcome(List.of(), List.of());
         }
         Translator translator = translatorFactory.select(mode);
         List<TranslationResult> results = new ArrayList<>();
+        List<String> failedFiles = new ArrayList<>();
         for (TranslationTask task : tasks) {
-            results.add(translateTask(task, translator));
+            try {
+                results.add(translateTask(task, translator));
+            } catch (TranslationException ex) {
+                LOGGER.error("Translation failed for {}: {}", task.filePath(), ex.getMessage(), ex);
+                failedFiles.add(task.filePath());
+            }
         }
-        return new TranslationOutcome(results);
+        return new TranslationOutcome(results, failedFiles);
     }
 
     public TranslationResult translateTask(TranslationTask task, TranslationMode mode) {

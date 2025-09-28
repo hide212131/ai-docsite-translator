@@ -4,12 +4,15 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import ai.docsite.translator.config.Config;
 import ai.docsite.translator.config.LlmProvider;
+import ai.docsite.translator.config.LogFormat;
 import ai.docsite.translator.config.Mode;
 import ai.docsite.translator.config.Secrets;
 import ai.docsite.translator.config.TranslatorConfig;
 import ai.docsite.translator.diff.ChangeCategory;
 import ai.docsite.translator.diff.DiffMetadata;
 import ai.docsite.translator.diff.FileChange;
+import ai.docsite.translator.git.CommitService;
+import ai.docsite.translator.git.CommitService.CommitResult;
 import ai.docsite.translator.git.GitWorkflowResult;
 import ai.docsite.translator.pr.PullRequestComposer;
 import ai.docsite.translator.pr.PullRequestService;
@@ -39,6 +42,7 @@ class AgentOrchestratorTest {
     private AgentOrchestrator orchestrator;
     private FixedPlanner taskPlanner;
     private RecordingDocumentWriter documentWriter;
+    private CommitServiceStub commitService;
 
     @BeforeEach
     void setUp() {
@@ -46,25 +50,34 @@ class AgentOrchestratorTest {
         pullRequestService = new PullRequestServiceSpy();
         taskPlanner = new FixedPlanner();
         documentWriter = new RecordingDocumentWriter();
+        commitService = new CommitServiceStub();
         AgentFactory agentFactory = new AgentFactory(new SimpleRoutingChatModel(), translationService, pullRequestService,
                 new DefaultLineStructureAnalyzer(), new DefaultLineStructureAdjuster());
         orchestrator = new AgentOrchestrator(agentFactory, translationService, pullRequestService,
-                taskPlanner, documentWriter);
+                taskPlanner, documentWriter, commitService);
     }
 
     @Test
     void batchModeTriggersTranslationAndPullRequestDraft() {
         Config config = config(Mode.BATCH, false);
         GitWorkflowResult workflowResult = workflowResultWithChanges();
+        commitService.setCommitResult(new CommitResult(true, true, Optional.of("feedface"),
+                "docs: sync-abc1234\n- docs/new.md", List.of("docs/new.md")));
+        commitService.setPushShouldSucceed(true);
 
         AgentRunResult result = orchestrator.run(config, workflowResult);
 
         assertThat(result.translationTriggered()).isTrue();
-        assertThat(result.pullRequestDraftCreated()).isFalse();
+        assertThat(result.pullRequestDraftCreated()).isTrue();
+        assertThat(result.commitSha()).contains("feedface");
         assertThat(translationService.invocations).isEqualTo(1);
         assertThat(translationService.lastMode).isEqualTo(TranslationMode.PRODUCTION);
-        assertThat(pullRequestService.invocations).isZero();
+        assertThat(pullRequestService.prepareDraftInvocations).isEqualTo(1);
+        assertThat(pullRequestService.createInvocations).isEqualTo(1);
+        assertThat(pullRequestService.printInvocations).isZero();
         assertThat(documentWriter.invocations).isEqualTo(1);
+        assertThat(commitService.invocations).isEqualTo(1);
+        assertThat(commitService.pushInvocations).isEqualTo(1);
     }
 
     @Test
@@ -77,8 +90,29 @@ class AgentOrchestratorTest {
         assertThat(result.translationTriggered()).isFalse();
         assertThat(result.pullRequestDraftCreated()).isTrue();
         assertThat(translationService.invocations).isZero();
-        assertThat(pullRequestService.invocations).isEqualTo(1);
+        assertThat(pullRequestService.prepareDraftInvocations).isEqualTo(1);
+        assertThat(pullRequestService.printInvocations).isEqualTo(1);
+        assertThat(pullRequestService.createInvocations).isZero();
         assertThat(documentWriter.invocations).isZero();
+        assertThat(commitService.invocations).isZero();
+        assertThat(commitService.pushInvocations).isZero();
+        assertThat(result.commitSha()).isEmpty();
+    }
+
+    @Test
+    void skipsPrWhenPushFails() {
+        Config config = config(Mode.BATCH, false);
+        GitWorkflowResult workflowResult = workflowResultWithChanges();
+        commitService.setCommitResult(new CommitResult(true, true, Optional.of("feedface"),
+                "docs: sync-abc1234\n- docs/new.md", List.of("docs/new.md")));
+        commitService.setPushShouldSucceed(false);
+
+        AgentRunResult result = orchestrator.run(config, workflowResult);
+
+        assertThat(result.translationTriggered()).isTrue();
+        assertThat(result.pullRequestDraftCreated()).isFalse();
+        assertThat(commitService.pushInvocations).isEqualTo(1);
+        assertThat(pullRequestService.createInvocations).isZero();
     }
 
     private Config config(Mode mode, boolean dryRun) {
@@ -90,6 +124,7 @@ class AgentOrchestratorTest {
                 Optional.empty(),
                 dryRun,
                 dryRun ? TranslationMode.DRY_RUN : TranslationMode.PRODUCTION,
+                LogFormat.TEXT,
                 new TranslatorConfig(LlmProvider.OLLAMA, "lucas2024/hodachi-ezo-humanities-9b-gemma-2-it:q8_0", Optional.of("http://localhost:11434")),
                 new Secrets(Optional.empty(), Optional.empty()),
                 Optional.empty(),
@@ -118,16 +153,34 @@ class AgentOrchestratorTest {
     }
 
     private static final class PullRequestServiceSpy extends PullRequestService {
-        private int invocations;
+        private int prepareDraftInvocations;
+        private int printInvocations;
+        private int createInvocations;
 
         PullRequestServiceSpy() {
             super(new PullRequestComposer());
         }
 
         @Override
-        public PullRequestDraft prepareDryRunDraft(GitWorkflowResult workflowResult) {
-            invocations++;
-            return super.prepareDryRunDraft(workflowResult);
+        public PullRequestDraft prepareDraft(Config config,
+                                             GitWorkflowResult workflowResult,
+                                             List<String> files,
+                                             Optional<String> translationCommitSha,
+                                             List<String> conflictFailures,
+                                             List<String> translationFailures) {
+            prepareDraftInvocations++;
+            return super.prepareDraft(config, workflowResult, files, translationCommitSha, conflictFailures, translationFailures);
+        }
+
+        @Override
+        public void printDraft(PullRequestDraft draft) {
+            printInvocations++;
+        }
+
+        @Override
+        public Optional<String> createPullRequest(Config config, GitWorkflowResult workflowResult, PullRequestDraft draft) {
+            createInvocations++;
+            return Optional.of("https://example.com/pr/1");
         }
     }
 
@@ -142,6 +195,11 @@ class AgentOrchestratorTest {
         public List<TranslationTask> plan(GitWorkflowResult workflowResult, int maxFilesPerRun) {
             return tasks;
         }
+
+        @Override
+        public PlanResult planWithDiagnostics(GitWorkflowResult workflowResult, int maxFilesPerRun) {
+            return new PlanResult(tasks, List.of(), List.of());
+        }
     }
 
     private static final class RecordingDocumentWriter extends DocumentWriter {
@@ -150,6 +208,40 @@ class AgentOrchestratorTest {
         @Override
         public void write(Path originRoot, TranslationResult result) {
             invocations++;
+        }
+    }
+
+    private static final class CommitServiceStub extends CommitService {
+        private int invocations;
+        private CommitResult nonDryRunResult = CommitResult.noChanges();
+        private int pushInvocations;
+        private boolean pushShouldSucceed;
+
+        void setCommitResult(CommitResult result) {
+            this.nonDryRunResult = result;
+        }
+
+        void setPushShouldSucceed(boolean value) {
+            this.pushShouldSucceed = value;
+        }
+
+        @Override
+        public CommitResult commitTranslatedFiles(Path repositoryRoot,
+                                                  String targetShortSha,
+                                                  List<String> translatedFiles,
+                                                  boolean dryRun) {
+            invocations++;
+            if (dryRun) {
+                return new CommitResult(!translatedFiles.isEmpty(), false, Optional.empty(),
+                        "docs: sync-" + targetShortSha, List.copyOf(translatedFiles));
+            }
+            return nonDryRunResult;
+        }
+
+        @Override
+        public boolean pushTranslationBranch(Path repositoryRoot, String branchName, Optional<String> githubToken) {
+            pushInvocations++;
+            return pushShouldSucceed;
         }
     }
 }
