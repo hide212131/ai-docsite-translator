@@ -2,18 +2,23 @@ package ai.docsite.translator.git;
 
 import ai.docsite.translator.config.Config;
 import ai.docsite.translator.config.Mode;
+import ai.docsite.translator.diff.ChangeCategory;
 import ai.docsite.translator.diff.DiffAnalyzer;
 import ai.docsite.translator.diff.DiffMetadata;
+import ai.docsite.translator.diff.FileChange;
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.net.URI;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
-import java.io.UncheckedIOException;
 import org.eclipse.jgit.api.CreateBranchCommand.SetupUpstreamMode;
 import org.eclipse.jgit.api.Git;
 import org.eclipse.jgit.api.MergeCommand;
@@ -85,6 +90,7 @@ public class GitWorkflowService {
                 DiffMetadata metadata = mergeResult.getMergeStatus().isSuccessful()
                         ? diffAnalyzer.analyze(origin.getRepository(), originHead, translationHead)
                         : diffAnalyzer.analyzeWorkingTree(origin.getRepository(), originHead);
+                metadata = filterMetadata(metadata, config);
 
                 return new GitWorkflowResult(upstreamDir, originDir, branchName, targetCommit.getName(), shortId.name(),
                         baseUpstreamCommit.getName(), originHead.getName(), metadata, mergeResult.getMergeStatus());
@@ -187,13 +193,69 @@ public class GitWorkflowService {
             RevCommit originCommit = walk.parseCommit(originHead);
             walk.markStart(upstreamCommit);
             walk.markUninteresting(originCommit);
-            List<RevCommit> commits = new java.util.ArrayList<>();
+            List<RevCommit> commits = new ArrayList<>();
             for (RevCommit commit : walk) {
                 commits.add(commit);
             }
             commits.sort((a, b) -> Integer.compare(b.getCommitTime(), a.getCommitTime()));
             return commits;
         }
+    }
+
+    private DiffMetadata filterMetadata(DiffMetadata metadata, Config config) {
+        if (metadata == null) {
+            return DiffMetadata.empty();
+        }
+        List<FileChange> filtered = new ArrayList<>();
+        Set<String> allowedExtensions = config.documentExtensions();
+        List<String> includePaths = config.translationIncludePaths();
+
+        for (FileChange change : metadata.changes()) {
+            if (change.category() == ChangeCategory.NON_DOCUMENT) {
+                filtered.add(change);
+                continue;
+            }
+
+            String normalizedPath = normalizePath(change.path());
+            if (!includePaths.isEmpty() && !isUnderIncludedPath(normalizedPath, includePaths)) {
+                continue;
+            }
+
+            if (!allowedExtensions.isEmpty()) {
+                String extension = extensionOf(normalizedPath);
+                if (!allowedExtensions.contains(extension)) {
+                    continue;
+                }
+            }
+
+            filtered.add(change);
+        }
+
+        return new DiffMetadata(filtered);
+    }
+
+    private boolean isUnderIncludedPath(String path, List<String> includePaths) {
+        for (String include : includePaths) {
+            if (include.isBlank()) {
+                continue;
+            }
+            if (path.equals(include) || path.startsWith(include + "/")) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private String normalizePath(String path) {
+        return path.replace('\\', '/');
+    }
+
+    private String extensionOf(String path) {
+        int idx = path.lastIndexOf('.') + 1;
+        if (idx <= 0 || idx == path.length()) {
+            return "";
+        }
+        return path.substring(idx).toLowerCase(Locale.ROOT);
     }
 
     private RevCommit selectTargetCommit(Config config, List<RevCommit> pendingCommits) {

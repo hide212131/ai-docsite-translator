@@ -15,7 +15,9 @@ import java.io.IOException;
 import java.net.URI;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import org.eclipse.jgit.api.Git;
 import org.eclipse.jgit.api.ResetCommand.ResetType;
 import org.eclipse.jgit.api.MergeResult.MergeStatus;
@@ -92,7 +94,9 @@ class GitWorkflowServiceTest {
                 new TranslatorConfig(LlmProvider.OLLAMA, "lucas2024/hodachi-ezo-humanities-9b-gemma-2-it:q8_0", Optional.of("http://localhost:11434")),
                 new Secrets(Optional.empty(), Optional.empty()),
                 translationTargetSha,
-                0);
+                0,
+                List.of(),
+                Set.of());
     }
 
     private RepositorySetup prepareRepositories() throws Exception {

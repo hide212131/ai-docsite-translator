@@ -43,6 +43,8 @@ class ConfigLoaderTest {
         assertThat(config.secrets().githubToken()).isEmpty();
         assertThat(config.secrets().geminiApiKey()).isEmpty();
         assertThat(config.maxFilesPerRun()).isEqualTo(5);
+        assertThat(config.translationIncludePaths()).isEmpty();
+        assertThat(config.documentExtensions()).containsExactlyInAnyOrder("md", "mdx", "txt", "html");
     }
 
     @Test
@@ -56,6 +58,8 @@ class ConfigLoaderTest {
         envValues.put(ConfigLoader.ENV_LLM_MODEL, "custom-gguf");
         envValues.put(ConfigLoader.ENV_GITHUB_TOKEN, "github-token");
         envValues.put(ConfigLoader.ENV_MAX_FILES_PER_RUN, "2");
+        envValues.put(ConfigLoader.ENV_TRANSLATION_INCLUDE_PATHS, "docs,docs/releases");
+        envValues.put(ConfigLoader.ENV_DOCUMENT_EXTENSIONS, ".md,.mdx");
 
         RecordingEnvironmentReader environmentReader = new RecordingEnvironmentReader(envValues);
         CliArguments cliArguments = CommandLine.populateCommand(new CliArguments());
@@ -72,6 +76,8 @@ class ConfigLoaderTest {
         assertThat(config.secrets().githubToken()).contains("github-token");
         assertThat(config.secrets().geminiApiKey()).isEmpty();
         assertThat(config.maxFilesPerRun()).isEqualTo(2);
+        assertThat(config.translationIncludePaths()).containsExactly("docs", "docs/releases");
+        assertThat(config.documentExtensions()).containsExactlyInAnyOrder("md", "mdx");
     }
 
     @Test

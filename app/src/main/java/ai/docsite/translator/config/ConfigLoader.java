@@ -3,8 +3,13 @@ package ai.docsite.translator.config;
 import ai.docsite.translator.cli.CliArguments;
 import ai.docsite.translator.translate.TranslationMode;
 import java.net.URI;
+import java.util.Arrays;
+import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 /**
  * Builds a {@link Config} instance by combining CLI arguments with environment variables and defaults.
@@ -26,9 +31,12 @@ public class ConfigLoader {
     static final String ENV_LLM_PROVIDER = "LLM_PROVIDER";
     static final String ENV_LLM_MODEL = "LLM_MODEL";
     static final String ENV_GEMINI_API_KEY = "GEMINI_API_KEY";
+    static final String ENV_TRANSLATION_INCLUDE_PATHS = "TRANSLATION_INCLUDE_PATHS";
+    static final String ENV_DOCUMENT_EXTENSIONS = "TRANSLATION_DOCUMENT_EXTENSIONS";
 
     private static final String DEFAULT_ORIGIN_BRANCH = "main";
     private static final String DEFAULT_BRANCH_TEMPLATE = "sync-<upstream-short-sha>";
+    private static final Set<String> DEFAULT_DOCUMENT_EXTENSIONS = Set.of("md", "mdx", "txt", "html");
 
     private final EnvironmentReader environmentReader;
 
@@ -83,6 +91,16 @@ public class ConfigLoader {
                     .orElse(0);
         }
 
+        List<String> includePaths = environmentReader.get(ENV_TRANSLATION_INCLUDE_PATHS)
+                .filter(ConfigLoader::isNotBlank)
+                .map(ConfigLoader::parseIncludePaths)
+                .orElse(List.of());
+
+        Set<String> documentExtensions = environmentReader.get(ENV_DOCUMENT_EXTENSIONS)
+                .filter(ConfigLoader::isNotBlank)
+                .map(ConfigLoader::parseDocumentExtensions)
+                .orElse(DEFAULT_DOCUMENT_EXTENSIONS);
+
         if (!dryRun && githubToken.isEmpty()) {
             throw new IllegalStateException("GITHUB_TOKEN must be provided unless running in dry-run mode");
         }
@@ -91,7 +109,7 @@ public class ConfigLoader {
         TranslatorConfig translatorConfig = new TranslatorConfig(provider, modelName, baseUrl);
 
         return new Config(mode, upstreamUrl, originUrl, originBranch, translationBranchTemplate, since, dryRun,
-                translationMode, translatorConfig, secrets, translationTargetSha, maxFilesPerRun);
+                translationMode, translatorConfig, secrets, translationTargetSha, maxFilesPerRun, includePaths, documentExtensions);
     }
 
     private String defaultModelFor(LlmProvider provider) {
@@ -175,5 +193,22 @@ public class ConfigLoader {
 
     private static boolean isNotBlank(String value) {
         return value != null && !value.isBlank();
+    }
+
+    private static List<String> parseIncludePaths(String raw) {
+        return Arrays.stream(raw.split(","))
+                .map(String::trim)
+                .filter(ConfigLoader::isNotBlank)
+                .map(value -> value.replace('\\', '/'))
+                .collect(Collectors.toList());
+    }
+
+    private static Set<String> parseDocumentExtensions(String raw) {
+        return Arrays.stream(raw.split(","))
+                .map(String::trim)
+                .filter(ConfigLoader::isNotBlank)
+                .map(value -> value.startsWith(".") ? value.substring(1) : value)
+                .map(value -> value.toLowerCase(java.util.Locale.ROOT))
+                .collect(Collectors.toCollection(LinkedHashSet::new));
     }
 }

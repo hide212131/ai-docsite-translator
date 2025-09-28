@@ -13,7 +13,9 @@ import ai.docsite.translator.git.GitWorkflowService;
 import ai.docsite.translator.translate.TranslationMode;
 import java.net.URI;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import org.junit.jupiter.api.Test;
 
 class CliApplicationTest {
@@ -31,7 +33,9 @@ class CliApplicationTest {
                 new TranslatorConfig(LlmProvider.OLLAMA, "lucas2024/hodachi-ezo-humanities-9b-gemma-2-it:q8_0", Optional.of("http://localhost:11434")),
                 new Secrets(Optional.empty(), Optional.empty()),
                 Optional.empty(),
-                0);
+                0,
+                List.of(),
+                Set.of());
 
         RecordingGitWorkflowService gitWorkflowService = new RecordingGitWorkflowService();
         CliApplication application = new CliApplication(
