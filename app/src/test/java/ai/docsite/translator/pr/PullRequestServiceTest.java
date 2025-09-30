@@ -36,6 +36,7 @@ class PullRequestServiceTest {
         assertThat(draft.title()).isEqualTo("docs: sync-abc1234");
         assertThat(draft.body()).contains("https://github.com/example/upstream/commit/abcdef0123456789");
         assertThat(draft.body()).contains("https://github.com/example/origin/commit/feedface");
+        assertThat(draft.body()).contains("([original](https://github.com/example/upstream/blob/abcdef0123456789/docs/guide.md))");
         assertThat(draft.body()).contains("Unresolved conflicts");
         assertThat(draft.body()).contains("Translation failed");
         assertThat(draft.filesAsBullets()).contains("- docs/guide.md");
@@ -55,6 +56,22 @@ class PullRequestServiceTest {
                 List.of());
 
         assertThat(draft.body()).contains("pending (dry-run)");
+    }
+
+    @Test
+    void encodesOriginalFileLinks() {
+        PullRequestService service = new PullRequestService(new PullRequestComposer());
+        Config config = config();
+        GitWorkflowResult workflowResult = workflowResult();
+
+        PullRequestService.PullRequestDraft draft = service.prepareDraft(config,
+                workflowResult,
+                List.of("docs/sub directory/guide.md"),
+                Optional.of("feedface"),
+                List.of(),
+                List.of());
+
+        assertThat(draft.body()).contains("docs/sub directory/guide.md ([original](https://github.com/example/upstream/blob/abcdef0123456789/docs/sub%20directory/guide.md))");
     }
 
     private Config config() {

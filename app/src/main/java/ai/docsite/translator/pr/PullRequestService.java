@@ -47,14 +47,21 @@ public class PullRequestService {
         List<String> failures = List.copyOf(translationFailures == null ? List.of() : translationFailures);
 
         String title = composer.composeTitle(workflowResult.targetCommitShortSha());
-        String upstreamLink = buildCommitLink(config.upstreamUrl(), workflowResult.targetCommitSha())
+        Optional<RepoCoordinates> upstreamCoordinates = coordinates(config.upstreamUrl());
+        String upstreamLink = upstreamCoordinates
+                .map(coords -> buildCommitLink(coords, workflowResult.targetCommitSha()))
                 .orElse(workflowResult.targetCommitSha());
         Optional<String> translationLink = translationCommitSha.flatMap(sha ->
                 buildCommitLink(config.originUrl(), sha));
+        Optional<PullRequestComposer.OriginalFileLinkContext> originalFileLinkContext = upstreamCoordinates
+                .map(coords -> new PullRequestComposer.OriginalFileLinkContext(
+                        "https://" + coords.host() + '/' + coords.repository(),
+                        workflowResult.targetCommitSha()));
         String body = composer.composeBody(new PullRequestComposer.Context(
                 upstreamLink,
                 translationLink,
                 copyFiles,
+                originalFileLinkContext,
                 conflicts,
                 failures));
 
@@ -112,7 +119,11 @@ public class PullRequestService {
         if (commitSha == null || commitSha.isBlank()) {
             return Optional.empty();
         }
-        return coordinates(uri).map(coords -> "https://" + coords.host() + "/" + coords.repository() + "/commit/" + commitSha);
+        return coordinates(uri).map(coords -> buildCommitLink(coords, commitSha));
+    }
+
+    private String buildCommitLink(RepoCoordinates coordinates, String commitSha) {
+        return "https://" + coordinates.host() + "/" + coordinates.repository() + "/commit/" + commitSha;
     }
 
     private Optional<RepoCoordinates> coordinates(URI uri) {
