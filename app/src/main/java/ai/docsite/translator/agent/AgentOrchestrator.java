@@ -12,6 +12,7 @@ import ai.docsite.translator.translate.TranslationTask;
 import ai.docsite.translator.translate.TranslationTaskPlanner;
 import ai.docsite.translator.translate.TranslationTaskPlanner.PlanResult;
 import ai.docsite.translator.translate.conflict.ConflictCleanupService;
+import ai.docsite.translator.translate.conflict.ConflictCleanupService.Result;
 import ai.docsite.translator.writer.DocumentWriter;
 import java.util.List;
 import org.slf4j.Logger;
@@ -78,10 +79,20 @@ public class AgentOrchestrator {
                 translationTriggered = outcome.processedFiles() > 0;
                 translationFailures = outcome.failedFiles();
                 if (translationTriggered) {
-                    List<String> resolvedConflicts = conflictCleanupService.cleanDeletionConflicts(workflowResult.originDirectory());
-                    if (!resolvedConflicts.isEmpty()) {
-                        LOGGER.info("Resolved deletion-only merge conflicts: {}", String.join(", ", resolvedConflicts));
+                    Result cleanupResult = conflictCleanupService.cleanConflicts(workflowResult.originDirectory());
+                    if (!cleanupResult.resolvedConflicts().isEmpty()) {
+                        LOGGER.info("Resolved deletion-only merge conflicts: {}",
+                                String.join(", ", cleanupResult.resolvedConflicts()));
                     }
+                    if (!cleanupResult.forcedMergeConflicts().isEmpty()) {
+                        LOGGER.warn("Forced merge for non-document files (conflict markers remain): {}",
+                                String.join(", ", cleanupResult.forcedMergeConflicts()));
+                    }
+                    if (!cleanupResult.remainingConflicts().isEmpty()) {
+                        LOGGER.warn("Unresolved document conflicts detected: {}",
+                                String.join(", ", cleanupResult.remainingConflicts()));
+                    }
+                    conflictFailures = mergeDistinct(conflictFailures, cleanupResult.forcedMergeConflicts());
                     commitResult = commitService.commitTranslatedFiles(
                             workflowResult.originDirectory(),
                             workflowResult.targetCommitShortSha(),
@@ -137,5 +148,21 @@ public class AgentOrchestrator {
 
     private boolean containsKeyword(String plan, String keyword) {
         return plan != null && plan.toUpperCase().contains(keyword);
+    }
+
+    private List<String> mergeDistinct(List<String> current, List<String> additions) {
+        if (additions.isEmpty()) {
+            return current;
+        }
+        if (current.isEmpty()) {
+            return List.copyOf(additions);
+        }
+        java.util.List<String> merged = new java.util.ArrayList<>(current);
+        for (String item : additions) {
+            if (!merged.contains(item)) {
+                merged.add(item);
+            }
+        }
+        return List.copyOf(merged);
     }
 }

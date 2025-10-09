@@ -24,6 +24,7 @@ import ai.docsite.translator.translate.TranslationService;
 import ai.docsite.translator.translate.TranslationTask;
 import ai.docsite.translator.translate.TranslationTaskPlanner;
 import ai.docsite.translator.translate.conflict.ConflictCleanupService;
+import ai.docsite.translator.translate.conflict.ConflictCleanupService.Result;
 import ai.docsite.translator.writer.DefaultLineStructureAdjuster;
 import ai.docsite.translator.writer.DefaultLineStructureAnalyzer;
 import ai.docsite.translator.writer.DocumentWriter;
@@ -252,11 +253,16 @@ class AgentOrchestratorTest {
 
     private static final class ConflictCleanupServiceStub extends ConflictCleanupService {
         private int invocations;
+        private Result result = Result.empty();
+
+        void setResult(Result result) {
+            this.result = result;
+        }
 
         @Override
-        public List<String> cleanDeletionConflicts(Path repositoryRoot) {
+        public Result cleanConflicts(Path repositoryRoot) {
             invocations++;
-            return List.of();
+            return result;
         }
     }
 }
