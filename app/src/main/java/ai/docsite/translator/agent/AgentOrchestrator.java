@@ -11,6 +11,7 @@ import ai.docsite.translator.translate.TranslationService;
 import ai.docsite.translator.translate.TranslationTask;
 import ai.docsite.translator.translate.TranslationTaskPlanner;
 import ai.docsite.translator.translate.TranslationTaskPlanner.PlanResult;
+import ai.docsite.translator.translate.conflict.ConflictCleanupService;
 import ai.docsite.translator.writer.DocumentWriter;
 import java.util.List;
 import org.slf4j.Logger;
@@ -29,19 +30,22 @@ public class AgentOrchestrator {
     private final TranslationTaskPlanner taskPlanner;
     private final DocumentWriter documentWriter;
     private final CommitService commitService;
+    private final ConflictCleanupService conflictCleanupService;
 
     public AgentOrchestrator(AgentFactory agentFactory,
                              TranslationService translationService,
                              PullRequestService pullRequestService,
                              TranslationTaskPlanner taskPlanner,
                              DocumentWriter documentWriter,
-                             CommitService commitService) {
+                             CommitService commitService,
+                             ConflictCleanupService conflictCleanupService) {
         this.agentFactory = agentFactory;
         this.translationService = translationService;
         this.pullRequestService = pullRequestService;
         this.taskPlanner = taskPlanner;
         this.documentWriter = documentWriter;
         this.commitService = commitService;
+        this.conflictCleanupService = conflictCleanupService;
     }
 
     public AgentRunResult run(Config config, GitWorkflowResult workflowResult) {
@@ -74,6 +78,10 @@ public class AgentOrchestrator {
                 translationTriggered = outcome.processedFiles() > 0;
                 translationFailures = outcome.failedFiles();
                 if (translationTriggered) {
+                    List<String> resolvedConflicts = conflictCleanupService.cleanDeletionConflicts(workflowResult.originDirectory());
+                    if (!resolvedConflicts.isEmpty()) {
+                        LOGGER.info("Resolved deletion-only merge conflicts: {}", String.join(", ", resolvedConflicts));
+                    }
                     commitResult = commitService.commitTranslatedFiles(
                             workflowResult.originDirectory(),
                             workflowResult.targetCommitShortSha(),

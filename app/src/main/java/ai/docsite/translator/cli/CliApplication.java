@@ -19,11 +19,12 @@ import ai.docsite.translator.translate.ChatModelTranslator;
 import ai.docsite.translator.translate.LineStructureFormatter;
 import ai.docsite.translator.translate.MockTranslator;
 import ai.docsite.translator.translate.PassThroughTranslator;
-import ai.docsite.translator.translate.TranslationService;
 import ai.docsite.translator.translate.TranslationMode;
+import ai.docsite.translator.translate.TranslationService;
+import ai.docsite.translator.translate.TranslationTaskPlanner;
 import ai.docsite.translator.translate.Translator;
 import ai.docsite.translator.translate.TranslatorFactory;
-import ai.docsite.translator.translate.TranslationTaskPlanner;
+import ai.docsite.translator.translate.conflict.ConflictCleanupService;
 import ai.docsite.translator.writer.DefaultLineStructureAdjuster;
 import ai.docsite.translator.writer.DefaultLineStructureAnalyzer;
 import ai.docsite.translator.writer.DocumentWriter;
@@ -84,10 +85,11 @@ public final class CliApplication {
         TranslationTaskPlanner taskPlanner = new TranslationTaskPlanner();
         DocumentWriter documentWriter = new DocumentWriter();
         CommitService commitService = new CommitService();
+        ConflictCleanupService conflictCleanupService = new ConflictCleanupService();
         AgentFactory agentFactory = new AgentFactory(new SimpleRoutingChatModel(), translationService, pullRequestService,
                 new DefaultLineStructureAnalyzer(), new DefaultLineStructureAdjuster());
         AgentOrchestrator agentOrchestrator = new AgentOrchestrator(agentFactory, translationService, pullRequestService,
-                taskPlanner, documentWriter, commitService);
+                taskPlanner, documentWriter, commitService, conflictCleanupService);
 
         GitWorkflowResult workflowResult = gitWorkflowService.prepareSyncBranch(config);
         if (!workflowResult.translationBranch().isEmpty()) {

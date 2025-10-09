@@ -19,10 +19,11 @@ import ai.docsite.translator.pr.PullRequestService;
 import ai.docsite.translator.pr.PullRequestService.PullRequestDraft;
 import ai.docsite.translator.translate.TranslationMode;
 import ai.docsite.translator.translate.TranslationOutcome;
-import ai.docsite.translator.translate.TranslationService;
-import ai.docsite.translator.translate.TranslationTaskPlanner;
-import ai.docsite.translator.translate.TranslationTask;
 import ai.docsite.translator.translate.TranslationResult;
+import ai.docsite.translator.translate.TranslationService;
+import ai.docsite.translator.translate.TranslationTask;
+import ai.docsite.translator.translate.TranslationTaskPlanner;
+import ai.docsite.translator.translate.conflict.ConflictCleanupService;
 import ai.docsite.translator.writer.DefaultLineStructureAdjuster;
 import ai.docsite.translator.writer.DefaultLineStructureAnalyzer;
 import ai.docsite.translator.writer.DocumentWriter;
@@ -43,6 +44,7 @@ class AgentOrchestratorTest {
     private FixedPlanner taskPlanner;
     private RecordingDocumentWriter documentWriter;
     private CommitServiceStub commitService;
+    private ConflictCleanupServiceStub conflictCleanupService;
 
     @BeforeEach
     void setUp() {
@@ -51,10 +53,11 @@ class AgentOrchestratorTest {
         taskPlanner = new FixedPlanner();
         documentWriter = new RecordingDocumentWriter();
         commitService = new CommitServiceStub();
+        conflictCleanupService = new ConflictCleanupServiceStub();
         AgentFactory agentFactory = new AgentFactory(new SimpleRoutingChatModel(), translationService, pullRequestService,
                 new DefaultLineStructureAnalyzer(), new DefaultLineStructureAdjuster());
         orchestrator = new AgentOrchestrator(agentFactory, translationService, pullRequestService,
-                taskPlanner, documentWriter, commitService);
+                taskPlanner, documentWriter, commitService, conflictCleanupService);
     }
 
     @Test
@@ -78,6 +81,7 @@ class AgentOrchestratorTest {
         assertThat(documentWriter.invocations).isEqualTo(1);
         assertThat(commitService.invocations).isEqualTo(1);
         assertThat(commitService.pushInvocations).isEqualTo(1);
+        assertThat(conflictCleanupService.invocations).isEqualTo(1);
     }
 
     @Test
@@ -97,6 +101,7 @@ class AgentOrchestratorTest {
         assertThat(commitService.invocations).isZero();
         assertThat(commitService.pushInvocations).isZero();
         assertThat(result.commitSha()).isEmpty();
+        assertThat(conflictCleanupService.invocations).isZero();
     }
 
     @Test
@@ -242,6 +247,16 @@ class AgentOrchestratorTest {
         public boolean pushTranslationBranch(Path repositoryRoot, String branchName, Optional<String> githubToken) {
             pushInvocations++;
             return pushShouldSucceed;
+        }
+    }
+
+    private static final class ConflictCleanupServiceStub extends ConflictCleanupService {
+        private int invocations;
+
+        @Override
+        public List<String> cleanDeletionConflicts(Path repositoryRoot) {
+            invocations++;
+            return List.of();
         }
     }
 }
