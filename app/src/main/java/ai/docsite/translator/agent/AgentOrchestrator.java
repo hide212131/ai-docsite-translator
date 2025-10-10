@@ -99,13 +99,11 @@ public class AgentOrchestrator {
                             outcome.processedFilePaths(),
                             config.dryRun());
                     if (commitResult.committed() && !config.dryRun()) {
-                        pushSucceeded = commitService.pushTranslationBranch(
+                        commitService.pushTranslationBranch(
                                 workflowResult.originDirectory(),
                                 workflowResult.translationBranch(),
                                 config.secrets().githubToken());
-                        if (!pushSucceeded) {
-                            LOGGER.warn("Push failed for branch {}; PR creation will be skipped", workflowResult.translationBranch());
-                        }
+                        pushSucceeded = true;
                     }
                 }
             }

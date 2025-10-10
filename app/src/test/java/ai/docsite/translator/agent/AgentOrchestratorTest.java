@@ -1,6 +1,7 @@
 package ai.docsite.translator.agent;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import ai.docsite.translator.config.Config;
 import ai.docsite.translator.config.LlmProvider;
@@ -14,6 +15,7 @@ import ai.docsite.translator.diff.FileChange;
 import ai.docsite.translator.git.CommitService;
 import ai.docsite.translator.git.CommitService.CommitResult;
 import ai.docsite.translator.git.GitWorkflowResult;
+import ai.docsite.translator.git.GitWorkflowException;
 import ai.docsite.translator.pr.PullRequestComposer;
 import ai.docsite.translator.pr.PullRequestService;
 import ai.docsite.translator.pr.PullRequestService.PullRequestDraft;
@@ -106,17 +108,16 @@ class AgentOrchestratorTest {
     }
 
     @Test
-    void skipsPrWhenPushFails() {
+    void failsRunWhenPushFails() {
         Config config = config(Mode.BATCH, false);
         GitWorkflowResult workflowResult = workflowResultWithChanges();
         commitService.setCommitResult(new CommitResult(true, true, Optional.of("feedface"),
                 "docs: sync-abc1234\n- docs/new.md", List.of("docs/new.md")));
         commitService.setPushShouldSucceed(false);
 
-        AgentRunResult result = orchestrator.run(config, workflowResult);
-
-        assertThat(result.translationTriggered()).isTrue();
-        assertThat(result.pullRequestDraftCreated()).isFalse();
+        assertThatThrownBy(() -> orchestrator.run(config, workflowResult))
+                .isInstanceOf(GitWorkflowException.class)
+                .hasMessageContaining("push failure");
         assertThat(commitService.pushInvocations).isEqualTo(1);
         assertThat(pullRequestService.createInvocations).isZero();
     }
@@ -245,9 +246,11 @@ class AgentOrchestratorTest {
         }
 
         @Override
-        public boolean pushTranslationBranch(Path repositoryRoot, String branchName, Optional<String> githubToken) {
+        public void pushTranslationBranch(Path repositoryRoot, String branchName, Optional<String> githubToken) {
             pushInvocations++;
-            return pushShouldSucceed;
+            if (!pushShouldSucceed) {
+                throw new GitWorkflowException("simulated push failure");
+            }
         }
     }
 

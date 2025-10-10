@@ -14,7 +14,6 @@ import org.eclipse.jgit.api.Git;
 import org.eclipse.jgit.api.Status;
 import org.eclipse.jgit.api.errors.GitAPIException;
 import org.eclipse.jgit.revwalk.RevCommit;
-import java.util.Optional;
 import org.eclipse.jgit.transport.PushResult;
 import org.eclipse.jgit.transport.RefSpec;
 import org.eclipse.jgit.transport.RemoteRefUpdate;
@@ -74,14 +73,14 @@ public class CommitService {
         }
     }
 
-    public boolean pushTranslationBranch(Path repositoryRoot, String branchName, Optional<String> githubToken) {
+    public void pushTranslationBranch(Path repositoryRoot, String branchName, Optional<String> githubToken) {
         Objects.requireNonNull(repositoryRoot, "repositoryRoot");
         if (branchName == null || branchName.isBlank()) {
             throw new IllegalArgumentException("branchName must not be blank");
         }
         if (!Files.isDirectory(repositoryRoot.resolve(".git"))) {
             LOGGER.warn("Skipping push because {} is not a Git repository", repositoryRoot);
-            return false;
+            throw new GitWorkflowException("Translation repository is not a Git repository: " + repositoryRoot);
         }
         try (Git git = Git.open(repositoryRoot.toFile())) {
             RefSpec refSpec = new RefSpec("refs/heads/" + branchName + ":refs/heads/" + branchName);
@@ -92,19 +91,33 @@ public class CommitService {
                     .ifPresent(token -> pushCommand.setCredentialsProvider(new UsernamePasswordCredentialsProvider("x-access-token", token)));
             Iterable<PushResult> results = pushCommand.call();
             boolean success = true;
+            List<String> failureDetails = new ArrayList<>();
             for (PushResult result : results) {
+                String messages = result.getMessages();
+                if (messages != null && !messages.isBlank()) {
+                    LOGGER.warn("Push result message from remote: {}", messages.trim());
+                }
                 for (RemoteRefUpdate update : result.getRemoteUpdates()) {
                     RemoteRefUpdate.Status status = update.getStatus();
                     if (status != RemoteRefUpdate.Status.OK && status != RemoteRefUpdate.Status.UP_TO_DATE) {
                         success = false;
-                        LOGGER.warn("Remote update for {} returned status {}", update.getRemoteName(), status);
+                        String detail = Optional.ofNullable(update.getMessage())
+                                .map(String::trim)
+                                .filter(message -> !message.isBlank())
+                                .orElse("(no additional detail from remote)");
+                        LOGGER.warn("Remote update for {} returned status {}: {}", update.getRemoteName(), status, detail);
+                        failureDetails.add(update.getRemoteName() + " -> " + status + (detail.equals("(no additional detail from remote)") ? "" : ": " + detail));
                     }
                 }
             }
             if (success) {
                 LOGGER.info("Pushed branch {} to origin", branchName);
+                return;
             }
-            return success;
+            String summary = failureDetails.isEmpty()
+                    ? "Unknown push failure"
+                    : String.join("; ", failureDetails);
+            throw new GitWorkflowException("Failed to push translation branch " + branchName + ": " + summary);
         } catch (GitAPIException | IOException ex) {
             throw new GitWorkflowException("Failed to push translation branch", ex);
         }

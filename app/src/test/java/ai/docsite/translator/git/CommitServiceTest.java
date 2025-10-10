@@ -1,8 +1,10 @@
 package ai.docsite.translator.git;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import ai.docsite.translator.git.CommitService.CommitResult;
+import ai.docsite.translator.git.GitWorkflowException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
@@ -59,7 +61,7 @@ class CommitServiceTest {
     void pushTranslationBranchSendsBranchToOrigin() throws Exception {
         Path repository = initializeRepository("docs/push.md", "Initial\n");
         Path remote = tempDir.resolve("remote.git");
-        Git.init().setDirectory(remote.toFile()).setBare(true).call().close();
+        Git.init().setDirectory(remote.toFile()).setBare(true).setInitialBranch("main").call().close();
 
         try (Git git = Git.open(repository.toFile())) {
             git.remoteAdd().setName("origin").setUri(new URIish(remote.toUri().toString())).call();
@@ -69,12 +71,49 @@ class CommitServiceTest {
         CommitResult result = commitService.commitTranslatedFiles(repository, "def5678", List.of("docs/push.md"), false);
         assertThat(result.committed()).isTrue();
 
-        boolean pushed = commitService.pushTranslationBranch(repository, "main", Optional.empty());
-        assertThat(pushed).isTrue();
+        commitService.pushTranslationBranch(repository, "main", Optional.empty());
 
         try (Git git = Git.open(remote.toFile())) {
             assertThat(git.getRepository().resolve("refs/heads/main")).isNotNull();
         }
+    }
+
+    @Test
+    void pushTranslationBranchThrowsWhenRejected() throws Exception {
+        Path repository = initializeRepository("docs/conflict.md", "Initial\n");
+        Path remote = tempDir.resolve("remote-conflict.git");
+        Git.init().setDirectory(remote.toFile()).setBare(true).setInitialBranch("main").call().close();
+
+        try (Git git = Git.open(repository.toFile())) {
+            git.remoteAdd().setName("origin").setUri(new URIish(remote.toUri().toString())).call();
+        }
+
+        // First push to establish history.
+        mutateFile(repository, "docs/conflict.md", "First update\n");
+        CommitResult initial = commitService.commitTranslatedFiles(repository, "abc1234", List.of("docs/conflict.md"), false);
+        assertThat(initial.committed()).isTrue();
+        commitService.pushTranslationBranch(repository, "main", Optional.empty());
+
+        // Create a remote-only commit to force non-fast-forward rejection.
+        try (Git remoteGit = Git.cloneRepository()
+                .setURI(remote.toUri().toString())
+                .setDirectory(tempDir.resolve("remote-working").toFile())
+                .call()) {
+            configureUser(remoteGit);
+            Path file = remoteGit.getRepository().getWorkTree().toPath().resolve("docs/conflict.md");
+            Files.writeString(file, "Remote change\n");
+            remoteGit.add().addFilepattern("docs/conflict.md").call();
+            remoteGit.commit().setMessage("remote change").call();
+            remoteGit.push().call();
+        }
+
+        mutateFile(repository, "docs/conflict.md", "Second update\n");
+        CommitResult second = commitService.commitTranslatedFiles(repository, "def5678", List.of("docs/conflict.md"), false);
+        assertThat(second.committed()).isTrue();
+
+        assertThatThrownBy(() -> commitService.pushTranslationBranch(repository, "main", Optional.empty()))
+                .isInstanceOf(GitWorkflowException.class)
+                .hasMessageContaining("Failed to push translation branch main");
     }
 
     private Path initializeRepository(String relativePath, String content) throws Exception {
