@@ -116,6 +116,42 @@ class CommitServiceTest {
                 .hasMessageContaining("Failed to push translation branch main");
     }
 
+    @Test
+    void workflowFilesAreRevertedBeforeCommit() throws Exception {
+        Path repository = initializeRepository("docs/guide.md", "Initial\n");
+        
+        // Create initial workflow file
+        Path workflowFile = repository.resolve(".github/workflows/deploy.yml");
+        Files.createDirectories(workflowFile.getParent());
+        Files.writeString(workflowFile, "name: initial\n");
+        try (Git git = Git.open(repository.toFile())) {
+            git.add().addFilepattern(".github/workflows/deploy.yml").call();
+            git.commit().setMessage("add workflow").call();
+        }
+        
+        // Modify both the document and the workflow file
+        mutateFile(repository, "docs/guide.md", "Updated\n");
+        Files.writeString(workflowFile, "name: modified\n");
+        try (Git git = Git.open(repository.toFile())) {
+            git.add().addFilepattern(".github/workflows/deploy.yml").call();
+        }
+        
+        // Commit only the document - workflow changes should be reverted
+        CommitResult result = commitService.commitTranslatedFiles(repository, "abc1234", List.of("docs/guide.md"), false);
+        
+        assertThat(result.changesDetected()).isTrue();
+        assertThat(result.committed()).isTrue();
+        assertThat(result.files()).containsExactly("docs/guide.md");
+        
+        // Verify that the workflow file was reverted to its original state
+        String workflowContent = Files.readString(workflowFile);
+        assertThat(workflowContent).isEqualTo("name: initial\n");
+        
+        // Verify the document was updated
+        String docContent = Files.readString(repository.resolve("docs/guide.md"));
+        assertThat(docContent).isEqualTo("Updated\n");
+    }
+
     private Path initializeRepository(String relativePath, String content) throws Exception {
         Path repoDir = tempDir.resolve("repo-" + relativePath.hashCode());
         Files.createDirectories(repoDir);
