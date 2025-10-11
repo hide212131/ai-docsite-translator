@@ -50,6 +50,9 @@ public class CommitService {
                 .collect(Collectors.toCollection(TreeSet::new));
 
         try (Git git = Git.open(repositoryRoot.toFile())) {
+            // Revert any changes to .github/workflows to avoid permission issues
+            revertWorkflowChanges(git);
+            
             for (String file : normalizedFiles) {
                 git.add().addFilepattern(file).call();
             }
@@ -120,6 +123,38 @@ public class CommitService {
             throw new GitWorkflowException("Failed to push translation branch " + branchName + ": " + summary);
         } catch (GitAPIException | IOException ex) {
             throw new GitWorkflowException("Failed to push translation branch", ex);
+        }
+    }
+
+    /**
+     * Reverts any changes to .github/workflows files to avoid permission issues when pushing.
+     * GitHub Apps typically don't have the workflows permission, so we need to exclude these files.
+     */
+    private void revertWorkflowChanges(Git git) throws GitAPIException, IOException {
+        Status status = git.status().call();
+        Set<String> allChangedFiles = new TreeSet<>();
+        allChangedFiles.addAll(status.getModified());
+        allChangedFiles.addAll(status.getChanged());
+        allChangedFiles.addAll(status.getAdded());
+        allChangedFiles.addAll(status.getUncommittedChanges());
+        
+        List<String> workflowFiles = allChangedFiles.stream()
+                .filter(path -> path.startsWith(".github/workflows/"))
+                .collect(Collectors.toList());
+        
+        if (!workflowFiles.isEmpty()) {
+            LOGGER.info("Reverting changes to {} workflow file(s) to avoid permission issues: {}",
+                    workflowFiles.size(), String.join(", ", workflowFiles));
+            for (String file : workflowFiles) {
+                try {
+                    git.checkout()
+                            .setStartPoint("HEAD")
+                            .addPath(file)
+                            .call();
+                } catch (GitAPIException ex) {
+                    LOGGER.warn("Failed to revert {}: {}", file, ex.getMessage());
+                }
+            }
         }
     }
 
