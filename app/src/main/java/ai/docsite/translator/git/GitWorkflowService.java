@@ -85,6 +85,9 @@ public class GitWorkflowService {
                         .include(targetCommit)
                         .call();
 
+                // Revert .github/workflows files to avoid permission issues when pushing
+                revertWorkflowFilesAfterMerge(origin, config.originBranch());
+
                 ObjectId translationHead = resolveRequired(origin.getRepository(), "refs/heads/" + branchName);
                 ObjectId baseUpstreamCommit = findBaseUpstreamCommit(origin.getRepository(), targetCommit, originHead);
                 DiffMetadata metadata = mergeResult.getMergeStatus().isSuccessful()
@@ -300,5 +303,51 @@ public class GitWorkflowService {
             throw new GitWorkflowException("Unable to resolve ref: " + ref);
         }
         return resolved;
+    }
+
+    /**
+     * Reverts .github/workflows files to their state in the base branch to avoid permission issues.
+     * GitHub Apps typically don't have the workflows permission, so workflow files need to be
+     * excluded from the merge commit.
+     */
+    private void revertWorkflowFilesAfterMerge(Git git, String baseBranch) throws GitAPIException, IOException {
+        org.eclipse.jgit.api.Status status = git.status().call();
+        Set<String> allChangedFiles = new java.util.TreeSet<>();
+        allChangedFiles.addAll(status.getModified());
+        allChangedFiles.addAll(status.getChanged());
+        allChangedFiles.addAll(status.getAdded());
+        allChangedFiles.addAll(status.getUncommittedChanges());
+        
+        List<String> workflowFiles = allChangedFiles.stream()
+                .filter(path -> path.startsWith(".github/workflows/"))
+                .collect(java.util.stream.Collectors.toList());
+        
+        if (!workflowFiles.isEmpty()) {
+            LOGGER.info("Reverting {} workflow file(s) from merge to avoid permission issues: {}",
+                    workflowFiles.size(), String.join(", ", workflowFiles));
+            
+            // Checkout workflow files from the base branch
+            for (String file : workflowFiles) {
+                try {
+                    git.checkout()
+                            .setStartPoint("refs/heads/" + baseBranch)
+                            .addPath(file)
+                            .call();
+                } catch (GitAPIException ex) {
+                    LOGGER.warn("Failed to revert workflow file {}: {}", file, ex.getMessage());
+                }
+            }
+            
+            // Amend the merge commit to exclude workflow files
+            try {
+                git.commit()
+                        .setAmend(true)
+                        .setMessage(git.log().setMaxCount(1).call().iterator().next().getFullMessage())
+                        .call();
+                LOGGER.info("Amended merge commit to exclude workflow files");
+            } catch (GitAPIException ex) {
+                LOGGER.warn("Failed to amend merge commit: {}", ex.getMessage());
+            }
+        }
     }
 }
