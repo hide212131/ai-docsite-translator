@@ -152,6 +152,44 @@ class CommitServiceTest {
         assertThat(docContent).isEqualTo("Updated\n");
     }
 
+    @Test
+    void newlyAddedWorkflowFilesAreNotCommitted() throws Exception {
+        Path repository = initializeRepository("docs/guide.md", "Initial\n");
+        
+        // Add a new workflow file that doesn't exist in HEAD
+        Path workflowFile = repository.resolve(".github/workflows/new.yml");
+        Files.createDirectories(workflowFile.getParent());
+        Files.writeString(workflowFile, "name: new\n");
+        
+        // Modify the document
+        mutateFile(repository, "docs/guide.md", "Updated\n");
+        
+        // Stage both files
+        try (Git git = Git.open(repository.toFile())) {
+            git.add().addFilepattern(".github/workflows/new.yml").call();
+        }
+        
+        // Commit only the document
+        CommitResult result = commitService.commitTranslatedFiles(repository, "abc1234", List.of("docs/guide.md"), false);
+        
+        assertThat(result.changesDetected()).isTrue();
+        assertThat(result.committed()).isTrue();
+        assertThat(result.files()).containsExactly("docs/guide.md");
+        
+        // Verify the document was updated
+        String docContent = Files.readString(repository.resolve("docs/guide.md"));
+        assertThat(docContent).isEqualTo("Updated\n");
+        
+        // Verify that new workflow file still exists on disk but wasn't committed
+        assertThat(Files.exists(workflowFile)).isTrue();
+        try (Git git = Git.open(repository.toFile())) {
+            Iterable<RevCommit> log = git.log().setMaxCount(1).call();
+            RevCommit lastCommit = log.iterator().next();
+            assertThat(lastCommit.getFullMessage()).contains("sync-abc1234");
+            // The workflow file should not be in the commit
+        }
+    }
+
     private Path initializeRepository(String relativePath, String content) throws Exception {
         Path repoDir = tempDir.resolve("repo-" + relativePath.hashCode());
         Files.createDirectories(repoDir);
