@@ -112,7 +112,11 @@ public final class CliApplication {
     private TranslationService createTranslationService(Config config) {
         TranslatorFactory factory = buildTranslatorFactory(config);
         LineStructureFormatter formatter = new LineStructureFormatter(new DefaultLineStructureAnalyzer(), new DefaultLineStructureAdjuster());
-        return new TranslationService(factory, formatter);
+        return new TranslationService(factory, formatter,
+                config.llmMaxRetryAttempts(),
+                config.llmInitialBackoffSeconds(),
+                config.llmMaxBackoffSeconds(),
+                config.llmRetryJitterFactor());
     }
 
     private TranslatorFactory buildTranslatorFactory(Config config) {

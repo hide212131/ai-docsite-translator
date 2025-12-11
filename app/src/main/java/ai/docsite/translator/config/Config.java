@@ -27,7 +27,11 @@ public record Config(
         Optional<String> translationTargetSha,
         int maxFilesPerRun,
         List<String> translationIncludePaths,
-        Set<String> documentExtensions
+        Set<String> documentExtensions,
+        int llmMaxRetryAttempts,
+        int llmInitialBackoffSeconds,
+        int llmMaxBackoffSeconds,
+        double llmRetryJitterFactor
 ) {
 
     private static final String DEFAULT_TEMPLATE_TOKEN = "<upstream-short-sha>";
@@ -66,6 +70,18 @@ public record Config(
                 .map(Config::normalizeExtension)
                 .filter(value -> !value.isBlank())
                 .collect(Collectors.toUnmodifiableSet());
+        if (llmMaxRetryAttempts < 1) {
+            throw new IllegalArgumentException("llmMaxRetryAttempts must be at least 1");
+        }
+        if (llmInitialBackoffSeconds < 1) {
+            throw new IllegalArgumentException("llmInitialBackoffSeconds must be at least 1");
+        }
+        if (llmMaxBackoffSeconds < llmInitialBackoffSeconds) {
+            throw new IllegalArgumentException("llmMaxBackoffSeconds must be at least llmInitialBackoffSeconds");
+        }
+        if (llmRetryJitterFactor < 0.0 || llmRetryJitterFactor > 1.0) {
+            throw new IllegalArgumentException("llmRetryJitterFactor must be between 0.0 and 1.0");
+        }
     }
 
     private static String requireNonBlank(String value, String fieldName) {

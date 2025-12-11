@@ -48,6 +48,10 @@ class ConfigLoaderTest {
         assertThat(config.maxFilesPerRun()).isEqualTo(5);
         assertThat(config.translationIncludePaths()).isEmpty();
         assertThat(config.documentExtensions()).containsExactlyInAnyOrder("md", "mdx", "txt", "html");
+        assertThat(config.llmMaxRetryAttempts()).isEqualTo(6);
+        assertThat(config.llmInitialBackoffSeconds()).isEqualTo(2);
+        assertThat(config.llmMaxBackoffSeconds()).isEqualTo(60);
+        assertThat(config.llmRetryJitterFactor()).isEqualTo(0.3);
     }
 
     @Test
@@ -83,6 +87,10 @@ class ConfigLoaderTest {
         assertThat(config.maxFilesPerRun()).isEqualTo(2);
         assertThat(config.translationIncludePaths()).containsExactly("docs", "docs/releases");
         assertThat(config.documentExtensions()).containsExactlyInAnyOrder("md", "mdx");
+        assertThat(config.llmMaxRetryAttempts()).isEqualTo(6);
+        assertThat(config.llmInitialBackoffSeconds()).isEqualTo(2);
+        assertThat(config.llmMaxBackoffSeconds()).isEqualTo(60);
+        assertThat(config.llmRetryJitterFactor()).isEqualTo(0.3);
     }
 
     @Test
