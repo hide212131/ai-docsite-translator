@@ -37,7 +37,11 @@ class CliApplicationTest {
                 Optional.empty(),
                 0,
                 List.of(),
-                Set.of());
+                Set.of(),
+                6,
+                2,
+                60,
+                0.3);
 
         RecordingGitWorkflowService gitWorkflowService = new RecordingGitWorkflowService();
         CliApplication application = new CliApplication(

@@ -34,10 +34,18 @@ public class ConfigLoader {
     static final String ENV_TRANSLATION_INCLUDE_PATHS = "TRANSLATION_INCLUDE_PATHS";
     static final String ENV_DOCUMENT_EXTENSIONS = "TRANSLATION_DOCUMENT_EXTENSIONS";
     static final String ENV_LOG_FORMAT = "LOG_FORMAT";
+    static final String ENV_LLM_MAX_RETRY_ATTEMPTS = "LLM_MAX_RETRY_ATTEMPTS";
+    static final String ENV_LLM_INITIAL_BACKOFF_SECONDS = "LLM_INITIAL_BACKOFF_SECONDS";
+    static final String ENV_LLM_MAX_BACKOFF_SECONDS = "LLM_MAX_BACKOFF_SECONDS";
+    static final String ENV_LLM_RETRY_JITTER_FACTOR = "LLM_RETRY_JITTER_FACTOR";
 
     private static final String DEFAULT_ORIGIN_BRANCH = "main";
     private static final String DEFAULT_BRANCH_TEMPLATE = "sync-<upstream-short-sha>";
     private static final Set<String> DEFAULT_DOCUMENT_EXTENSIONS = Set.of("md", "mdx", "txt", "html");
+    private static final int DEFAULT_LLM_MAX_RETRY_ATTEMPTS = 6;
+    private static final int DEFAULT_LLM_INITIAL_BACKOFF_SECONDS = 2;
+    private static final int DEFAULT_LLM_MAX_BACKOFF_SECONDS = 60;
+    private static final double DEFAULT_LLM_RETRY_JITTER_FACTOR = 0.3;
 
     private final EnvironmentReader environmentReader;
 
@@ -103,6 +111,30 @@ public class ConfigLoader {
                 .map(ConfigLoader::parseDocumentExtensions)
                 .orElse(DEFAULT_DOCUMENT_EXTENSIONS);
 
+        int llmMaxRetryAttempts = environmentReader.get(ENV_LLM_MAX_RETRY_ATTEMPTS)
+                .filter(ConfigLoader::isNotBlank)
+                .map(String::trim)
+                .map(ConfigLoader::parsePositiveInteger)
+                .orElse(DEFAULT_LLM_MAX_RETRY_ATTEMPTS);
+
+        int llmInitialBackoffSeconds = environmentReader.get(ENV_LLM_INITIAL_BACKOFF_SECONDS)
+                .filter(ConfigLoader::isNotBlank)
+                .map(String::trim)
+                .map(ConfigLoader::parsePositiveInteger)
+                .orElse(DEFAULT_LLM_INITIAL_BACKOFF_SECONDS);
+
+        int llmMaxBackoffSeconds = environmentReader.get(ENV_LLM_MAX_BACKOFF_SECONDS)
+                .filter(ConfigLoader::isNotBlank)
+                .map(String::trim)
+                .map(ConfigLoader::parsePositiveInteger)
+                .orElse(DEFAULT_LLM_MAX_BACKOFF_SECONDS);
+
+        double llmRetryJitterFactor = environmentReader.get(ENV_LLM_RETRY_JITTER_FACTOR)
+                .filter(ConfigLoader::isNotBlank)
+                .map(String::trim)
+                .map(ConfigLoader::parseDouble)
+                .orElse(DEFAULT_LLM_RETRY_JITTER_FACTOR);
+
         if (!dryRun && githubToken.isEmpty()) {
             throw new IllegalStateException("GITHUB_TOKEN must be provided unless running in dry-run mode");
         }
@@ -111,7 +143,8 @@ public class ConfigLoader {
         TranslatorConfig translatorConfig = new TranslatorConfig(provider, modelName, baseUrl);
 
         return new Config(mode, upstreamUrl, originUrl, originBranch, translationBranchTemplate, since, dryRun,
-                translationMode, logFormat, translatorConfig, secrets, translationTargetSha, maxFilesPerRun, includePaths, documentExtensions);
+                translationMode, logFormat, translatorConfig, secrets, translationTargetSha, maxFilesPerRun, includePaths, documentExtensions,
+                llmMaxRetryAttempts, llmInitialBackoffSeconds, llmMaxBackoffSeconds, llmRetryJitterFactor);
     }
 
     private String defaultModelFor(LlmProvider provider) {
@@ -223,5 +256,13 @@ public class ConfigLoader {
                 .map(value -> value.startsWith(".") ? value.substring(1) : value)
                 .map(value -> value.toLowerCase(java.util.Locale.ROOT))
                 .collect(Collectors.toCollection(LinkedHashSet::new));
+    }
+
+    private static double parseDouble(String raw) {
+        try {
+            return Double.parseDouble(raw);
+        } catch (NumberFormatException ex) {
+            throw new IllegalArgumentException("Invalid double value: " + raw, ex);
+        }
     }
 }

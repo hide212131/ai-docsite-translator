@@ -89,7 +89,11 @@ class PullRequestServiceTest {
                 Optional.empty(),
                 0,
                 List.of(),
-                Set.of());
+                Set.of(),
+                6,
+                2,
+                60,
+                0.3);
     }
 
     private GitWorkflowResult workflowResult() {
