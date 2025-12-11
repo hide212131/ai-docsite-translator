@@ -22,11 +22,14 @@ import org.slf4j.LoggerFactory;
 public class TranslationService {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(TranslationService.class);
-    private static final int MAX_TRANSLATION_RETRIES = 3;
     private static final Pattern RETRY_DELAY_PATTERN = Pattern.compile("(?:retry in |retryDelay\"?:\\s*\")([0-9]+(?:\\.[0-9]+)?)s", Pattern.CASE_INSENSITIVE);
 
     private final TranslatorFactory translatorFactory;
     private final LineStructureFormatter formatter;
+    private final int maxRetryAttempts;
+    private final int initialBackoffSeconds;
+    private final int maxBackoffSeconds;
+    private final double jitterFactor;
 
     public TranslationService() {
         Translator production = new MockTranslator();
@@ -34,11 +37,36 @@ public class TranslationService {
         Translator mock = new MockTranslator();
         this.translatorFactory = new TranslatorFactory(production, dryRun, mock);
         this.formatter = new LineStructureFormatter(new DefaultLineStructureAnalyzer(), new DefaultLineStructureAdjuster());
+        this.maxRetryAttempts = 6;
+        this.initialBackoffSeconds = 2;
+        this.maxBackoffSeconds = 60;
+        this.jitterFactor = 0.3;
     }
 
     public TranslationService(TranslatorFactory translatorFactory, LineStructureFormatter formatter) {
+        this(translatorFactory, formatter, 6, 2, 60, 0.3);
+    }
+
+    public TranslationService(TranslatorFactory translatorFactory, LineStructureFormatter formatter,
+                              int maxRetryAttempts, int initialBackoffSeconds, int maxBackoffSeconds, double jitterFactor) {
         this.translatorFactory = Objects.requireNonNull(translatorFactory, "translatorFactory");
         this.formatter = Objects.requireNonNull(formatter, "formatter");
+        if (maxRetryAttempts < 1) {
+            throw new IllegalArgumentException("maxRetryAttempts must be at least 1");
+        }
+        if (initialBackoffSeconds < 1) {
+            throw new IllegalArgumentException("initialBackoffSeconds must be at least 1");
+        }
+        if (maxBackoffSeconds < initialBackoffSeconds) {
+            throw new IllegalArgumentException("maxBackoffSeconds must be at least initialBackoffSeconds");
+        }
+        if (jitterFactor < 0.0 || jitterFactor > 1.0) {
+            throw new IllegalArgumentException("jitterFactor must be between 0.0 and 1.0");
+        }
+        this.maxRetryAttempts = maxRetryAttempts;
+        this.initialBackoffSeconds = initialBackoffSeconds;
+        this.maxBackoffSeconds = maxBackoffSeconds;
+        this.jitterFactor = jitterFactor;
     }
 
     public TranslationOutcome translate(List<TranslationTask> tasks, TranslationMode mode) {
@@ -136,22 +164,26 @@ public class TranslationService {
 
     private List<String> translateWithRetry(Translator translator, List<String> sourceLines) {
         TranslationException lastFailure = null;
-        for (int attempt = 0; attempt < MAX_TRANSLATION_RETRIES; attempt++) {
+        for (int attempt = 0; attempt < maxRetryAttempts; attempt++) {
             try {
                 return translator.translate(sourceLines);
             } catch (TranslationException ex) {
                 lastFailure = ex;
-                Optional<Duration> maybeDelay = retryDelay(ex);
-                if (maybeDelay.isEmpty() || attempt == MAX_TRANSLATION_RETRIES - 1) {
+                Optional<Duration> maybeDelay = calculateRetryDelay(ex, attempt);
+                if (maybeDelay.isEmpty() || attempt == maxRetryAttempts - 1) {
+                    if (isRateLimitError(ex)) {
+                        LOGGER.error("Translation rate limited; max retries ({}) exceeded", maxRetryAttempts);
+                    }
                     throw ex;
                 }
                 Duration delay = maybeDelay.get();
-                LOGGER.warn("Translation rate limited; retrying in {} seconds (attempt {}/{})",
-                        delay.toSeconds(), attempt + 1, MAX_TRANSLATION_RETRIES);
+                LOGGER.warn("Translation rate limited (429/RESOURCE_EXHAUSTED); retrying in {} seconds (attempt {}/{})",
+                        delay.toSeconds(), attempt + 1, maxRetryAttempts);
                 try {
                     Thread.sleep(delay.toMillis());
                 } catch (InterruptedException interruptedException) {
                     Thread.currentThread().interrupt();
+                    LOGGER.warn("Translation retry interrupted");
                     throw ex;
                 }
             }
@@ -159,15 +191,46 @@ public class TranslationService {
         throw lastFailure == null ? new TranslationException("Unknown translation failure", null) : lastFailure;
     }
 
-    private Optional<Duration> retryDelay(Throwable throwable) {
+    private Optional<Duration> calculateRetryDelay(Throwable throwable, int attemptNumber) {
+        if (!isRateLimitError(throwable)) {
+            return Optional.empty();
+        }
+
+        // First check if provider returned a retry-after value
+        Optional<Duration> providerDelay = extractProviderRetryAfter(throwable);
+        if (providerDelay.isPresent()) {
+            return providerDelay;
+        }
+
+        // Calculate exponential backoff: initialBackoff * 2^attemptNumber
+        long baseDelaySeconds = initialBackoffSeconds * (1L << attemptNumber);
+        
+        // Cap at maxBackoff
+        long cappedDelaySeconds = Math.min(baseDelaySeconds, maxBackoffSeconds);
+        
+        // Apply jitter: delay * (1 ± jitterFactor)
+        double jitterMultiplier = 1.0 + (Math.random() * 2.0 - 1.0) * jitterFactor;
+        long finalDelaySeconds = Math.max(1, (long) (cappedDelaySeconds * jitterMultiplier));
+        
+        return Optional.of(Duration.ofSeconds(finalDelaySeconds));
+    }
+
+    private boolean isRateLimitError(Throwable throwable) {
         Throwable cause = throwable;
         while (cause != null) {
             if (cause instanceof RateLimitException) {
-                return Optional.of(Duration.ofSeconds(15));
+                return true;
+            }
+            String message = cause.getMessage();
+            if (message != null && (message.contains("RESOURCE_EXHAUSTED") || message.contains("429"))) {
+                return true;
             }
             cause = cause.getCause();
         }
+        return false;
+    }
 
+    private Optional<Duration> extractProviderRetryAfter(Throwable throwable) {
         String message = throwable.getMessage();
         if (message == null) {
             return Optional.empty();
@@ -181,9 +244,6 @@ public class TranslationService {
             } catch (NumberFormatException ignored) {
                 // fall through
             }
-        }
-        if (message.contains("RESOURCE_EXHAUSTED") || message.contains("429")) {
-            return Optional.of(Duration.ofSeconds(15));
         }
         return Optional.empty();
     }
