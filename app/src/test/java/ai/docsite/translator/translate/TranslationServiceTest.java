@@ -202,7 +202,8 @@ class TranslationServiceTest {
 
         assertThat(outcome.results()).hasSize(1);
         assertThat(attemptCount.get()).isEqualTo(3);
-        // Total duration should be at least 1s (first retry) + 2s (second retry) = 3s
+        // Total duration should be at least 1s (attempt 0 retry) + 2s (attempt 1 retry) = 3s
+        // With jitter=0 and initialBackoff=1, delays are: 1*2^0=1s, 1*2^1=2s
         assertThat(totalDuration).isGreaterThanOrEqualTo(2900);
     }
 

@@ -203,12 +203,13 @@ public class TranslationService {
         }
 
         // Calculate exponential backoff: initialBackoff * 2^attemptNumber
+        // For attemptNumber 0,1,2,3... this produces delays of 2s, 4s, 8s, 16s... (with initialBackoff=2)
         long baseDelaySeconds = initialBackoffSeconds * (1L << attemptNumber);
         
         // Cap at maxBackoff
         long cappedDelaySeconds = Math.min(baseDelaySeconds, maxBackoffSeconds);
         
-        // Apply jitter: delay * (1 ± jitterFactor)
+        // Apply jitter: delay * (1 ± jitterFactor) to avoid thundering herd
         double jitterMultiplier = 1.0 + (Math.random() * 2.0 - 1.0) * jitterFactor;
         long finalDelaySeconds = Math.max(1, (long) (cappedDelaySeconds * jitterMultiplier));
         
