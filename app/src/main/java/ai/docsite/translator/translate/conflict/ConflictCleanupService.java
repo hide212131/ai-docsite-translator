@@ -32,6 +32,7 @@ public class ConflictCleanupService {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(ConflictCleanupService.class);
     private static final List<String> DOCUMENT_EXTENSIONS = List.of("md", "mdx", "txt", "html");
+    private static final String CONFLICT_RESOLUTION_FILE_PATH = "conflict-resolution";
 
     private final ConflictDetector conflictDetector;
     private final TranslationService translationService;
@@ -158,7 +159,7 @@ public class ConflictCleanupService {
                 try {
                     translatedLines = translationService.translateTask(
                             new TranslationTask(
-                                    "conflict-resolution",
+                                    CONFLICT_RESOLUTION_FILE_PATH,
                                     incomingLines,
                                     List.of(),
                                     List.of(new TranslationSegment(0, incomingLines.size()))
@@ -176,9 +177,26 @@ public class ConflictCleanupService {
                 
                 // Replace the block in the merged document
                 int insertPosition = block.startLine();
-                for (int i = 0; i < mergedBlock.size() && insertPosition < mergedLines.size(); i++) {
-                    if (insertPosition + i < mergedLines.size()) {
-                        mergedLines.set(insertPosition + i, mergedBlock.get(i));
+                int blockLength = block.length();
+                
+                // Ensure the merged block matches the expected size
+                if (mergedBlock.size() != blockLength) {
+                    LOGGER.warn("Merged block size {} does not match expected size {} at line {}", 
+                            mergedBlock.size(), blockLength, insertPosition);
+                    // Adjust merged block to match expected size
+                    while (mergedBlock.size() < blockLength) {
+                        mergedBlock.add("");
+                    }
+                    if (mergedBlock.size() > blockLength) {
+                        mergedBlock = new ArrayList<>(mergedBlock.subList(0, blockLength));
+                    }
+                }
+                
+                // Replace lines in the merged document
+                for (int i = 0; i < mergedBlock.size(); i++) {
+                    int targetIndex = insertPosition + i;
+                    if (targetIndex < mergedLines.size()) {
+                        mergedLines.set(targetIndex, mergedBlock.get(i));
                     }
                 }
             }
@@ -210,8 +228,14 @@ public class ConflictCleanupService {
             return new ArrayList<>(headLines);
         }
         
-        // Last resort: return what we have
-        return translatedLines != null ? new ArrayList<>(translatedLines) : new ArrayList<>(headLines != null ? headLines : List.of());
+        // Last resort: return empty list
+        if (translatedLines != null) {
+            return new ArrayList<>(translatedLines);
+        }
+        if (headLines != null) {
+            return new ArrayList<>(headLines);
+        }
+        return new ArrayList<>();
     }
 
     private boolean isDocument(String path) {
