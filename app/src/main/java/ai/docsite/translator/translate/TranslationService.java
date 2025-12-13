@@ -216,6 +216,8 @@ public class TranslationService {
             // This ensures we wait long enough for multiple files to be processed
             if (maxFilesPerRun > 0) {
                 long multipliedMillis = baseDelay.toMillis() * maxFilesPerRun;
+                LOGGER.debug("Provider requested {}s delay; multiplying by maxFilesPerRun={} to get {}s",
+                        baseDelay.toSeconds(), maxFilesPerRun, multipliedMillis / 1000);
                 return Optional.of(Duration.ofMillis(multipliedMillis));
             }
             return providerDelay;
