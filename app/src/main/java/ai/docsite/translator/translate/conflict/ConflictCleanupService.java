@@ -172,6 +172,7 @@ public class ConflictCleanupService {
                 }
                 
                 // Merge translated content with HEAD content
+                // The block already has the correct size based on incoming lines
                 List<String> headLines = block.baseLines();
                 List<String> mergedBlock = mergeContentLines(headLines, translatedLines);
                 
@@ -179,24 +180,24 @@ public class ConflictCleanupService {
                 int insertPosition = block.startLine();
                 int blockLength = block.length();
                 
-                // Ensure the merged block matches the expected size
-                if (mergedBlock.size() != blockLength) {
-                    LOGGER.warn("Merged block size {} does not match expected size {} at line {}", 
-                            mergedBlock.size(), blockLength, insertPosition);
-                    // Adjust merged block to match expected size
-                    while (mergedBlock.size() < blockLength) {
-                        mergedBlock.add("");
-                    }
-                    if (mergedBlock.size() > blockLength) {
-                        mergedBlock = new ArrayList<>(mergedBlock.subList(0, blockLength));
-                    }
+                // Normalize merged block to match expected size
+                while (mergedBlock.size() < blockLength) {
+                    mergedBlock.add("");
+                }
+                if (mergedBlock.size() > blockLength) {
+                    mergedBlock = new ArrayList<>(mergedBlock.subList(0, blockLength));
                 }
                 
                 // Replace lines in the merged document
-                for (int i = 0; i < mergedBlock.size(); i++) {
+                for (int i = 0; i < blockLength; i++) {
                     int targetIndex = insertPosition + i;
                     if (targetIndex < mergedLines.size()) {
                         mergedLines.set(targetIndex, mergedBlock.get(i));
+                    } else {
+                        // This shouldn't happen if ConflictDetector is working correctly
+                        LOGGER.error("Block replacement index {} is out of bounds (document has {} lines)", 
+                                targetIndex, mergedLines.size());
+                        return Optional.empty();
                     }
                 }
             }
@@ -229,12 +230,6 @@ public class ConflictCleanupService {
         }
         
         // Last resort: return empty list
-        if (translatedLines != null) {
-            return new ArrayList<>(translatedLines);
-        }
-        if (headLines != null) {
-            return new ArrayList<>(headLines);
-        }
         return new ArrayList<>();
     }
 
