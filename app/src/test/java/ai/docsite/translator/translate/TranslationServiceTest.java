@@ -231,5 +231,102 @@ class TranslationServiceTest {
         assertThatThrownBy(() -> new TranslationService(factory, formatter, 6, 1, 60, -0.1))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("jitterFactor");
+
+        assertThatThrownBy(() -> new TranslationService(factory, formatter, 6, 1, 60, 0.3, -1))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("maxFilesPerRun");
+    }
+
+    @Test
+    void multipliesProviderRetryDelayByMaxFilesPerRun() {
+        AtomicInteger attemptCount = new AtomicInteger(0);
+        Translator retryAfterTranslator = lines -> {
+            int attempt = attemptCount.incrementAndGet();
+            if (attempt < 2) {
+                // Provider says retry in 2 seconds
+                throw new TranslationException("Rate limited, retry in 2s", new RateLimitException("429"));
+            }
+            return List.of("Success");
+        };
+        TranslatorFactory factory = new TranslatorFactory(retryAfterTranslator, new PassThroughTranslator(), new MockTranslator());
+        LineStructureFormatter formatter = new LineStructureFormatter(new DefaultLineStructureAnalyzer(), new DefaultLineStructureAdjuster());
+        // maxFilesPerRun=3 means we multiply the delay by 3
+        TranslationService service = new TranslationService(factory, formatter, 5, 10, 60, 0.0, 3);
+        TranslationTask task = new TranslationTask("docs/multiplied-delay.md",
+                List.of("Test"),
+                List.of(""),
+                List.of(new TranslationSegment(0, 1)));
+
+        long startTime = System.currentTimeMillis();
+        TranslationOutcome outcome = service.translate(List.of(task), TranslationMode.PRODUCTION);
+        long duration = System.currentTimeMillis() - startTime;
+
+        assertThat(outcome.results()).hasSize(1);
+        assertThat(outcome.failedFiles()).isEmpty();
+        assertThat(attemptCount.get()).isEqualTo(2);
+        // Should wait at least 2s * 3 = 6s (6000ms), not the 10s from initialBackoff
+        assertThat(duration).isGreaterThanOrEqualTo(5900);
+        assertThat(duration).isLessThan(10000);
+    }
+
+    @Test
+    void doesNotMultiplyWhenMaxFilesPerRunIsZero() {
+        AtomicInteger attemptCount = new AtomicInteger(0);
+        Translator retryAfterTranslator = lines -> {
+            int attempt = attemptCount.incrementAndGet();
+            if (attempt < 2) {
+                throw new TranslationException("Rate limited, retry in 2s", new RateLimitException("429"));
+            }
+            return List.of("Success");
+        };
+        TranslatorFactory factory = new TranslatorFactory(retryAfterTranslator, new PassThroughTranslator(), new MockTranslator());
+        LineStructureFormatter formatter = new LineStructureFormatter(new DefaultLineStructureAnalyzer(), new DefaultLineStructureAdjuster());
+        // maxFilesPerRun=0 (unlimited) means we don't multiply
+        TranslationService service = new TranslationService(factory, formatter, 5, 10, 60, 0.0, 0);
+        TranslationTask task = new TranslationTask("docs/no-multiply.md",
+                List.of("Test"),
+                List.of(""),
+                List.of(new TranslationSegment(0, 1)));
+
+        long startTime = System.currentTimeMillis();
+        TranslationOutcome outcome = service.translate(List.of(task), TranslationMode.PRODUCTION);
+        long duration = System.currentTimeMillis() - startTime;
+
+        assertThat(outcome.results()).hasSize(1);
+        assertThat(outcome.failedFiles()).isEmpty();
+        assertThat(attemptCount.get()).isEqualTo(2);
+        // Should use the provider's 2s delay as-is, not multiply by 0
+        assertThat(duration).isGreaterThanOrEqualTo(1900);
+        assertThat(duration).isLessThan(5000);
+    }
+
+    @Test
+    void extractsRetryDelayFromJsonFormat() {
+        AtomicInteger attemptCount = new AtomicInteger(0);
+        Translator retryAfterTranslator = lines -> {
+            int attempt = attemptCount.incrementAndGet();
+            if (attempt < 2) {
+                // Test the JSON format from the problem statement
+                throw new TranslationException("{\"retryDelay\": \"19s\"}", new RateLimitException("429"));
+            }
+            return List.of("Success");
+        };
+        TranslatorFactory factory = new TranslatorFactory(retryAfterTranslator, new PassThroughTranslator(), new MockTranslator());
+        LineStructureFormatter formatter = new LineStructureFormatter(new DefaultLineStructureAnalyzer(), new DefaultLineStructureAdjuster());
+        TranslationService service = new TranslationService(factory, formatter, 5, 10, 60, 0.0, 3);
+        TranslationTask task = new TranslationTask("docs/json-retry.md",
+                List.of("Test"),
+                List.of(""),
+                List.of(new TranslationSegment(0, 1)));
+
+        long startTime = System.currentTimeMillis();
+        TranslationOutcome outcome = service.translate(List.of(task), TranslationMode.PRODUCTION);
+        long duration = System.currentTimeMillis() - startTime;
+
+        assertThat(outcome.results()).hasSize(1);
+        assertThat(outcome.failedFiles()).isEmpty();
+        assertThat(attemptCount.get()).isEqualTo(2);
+        // Should wait at least 19s * 3 = 57s
+        assertThat(duration).isGreaterThanOrEqualTo(56900);
     }
 }

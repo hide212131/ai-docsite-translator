@@ -30,6 +30,7 @@ public class TranslationService {
     private final int initialBackoffSeconds;
     private final int maxBackoffSeconds;
     private final double jitterFactor;
+    private final int maxFilesPerRun;
 
     public TranslationService() {
         Translator production = new MockTranslator();
@@ -41,14 +42,21 @@ public class TranslationService {
         this.initialBackoffSeconds = 2;
         this.maxBackoffSeconds = 60;
         this.jitterFactor = 0.3;
+        this.maxFilesPerRun = 0;
     }
 
     public TranslationService(TranslatorFactory translatorFactory, LineStructureFormatter formatter) {
-        this(translatorFactory, formatter, 6, 2, 60, 0.3);
+        this(translatorFactory, formatter, 6, 2, 60, 0.3, 0);
     }
 
     public TranslationService(TranslatorFactory translatorFactory, LineStructureFormatter formatter,
                               int maxRetryAttempts, int initialBackoffSeconds, int maxBackoffSeconds, double jitterFactor) {
+        this(translatorFactory, formatter, maxRetryAttempts, initialBackoffSeconds, maxBackoffSeconds, jitterFactor, 0);
+    }
+
+    public TranslationService(TranslatorFactory translatorFactory, LineStructureFormatter formatter,
+                              int maxRetryAttempts, int initialBackoffSeconds, int maxBackoffSeconds, double jitterFactor,
+                              int maxFilesPerRun) {
         this.translatorFactory = Objects.requireNonNull(translatorFactory, "translatorFactory");
         this.formatter = Objects.requireNonNull(formatter, "formatter");
         if (maxRetryAttempts < 1) {
@@ -63,10 +71,14 @@ public class TranslationService {
         if (jitterFactor < 0.0 || jitterFactor > 1.0) {
             throw new IllegalArgumentException("jitterFactor must be between 0.0 and 1.0");
         }
+        if (maxFilesPerRun < 0) {
+            throw new IllegalArgumentException("maxFilesPerRun must be at least 0");
+        }
         this.maxRetryAttempts = maxRetryAttempts;
         this.initialBackoffSeconds = initialBackoffSeconds;
         this.maxBackoffSeconds = maxBackoffSeconds;
         this.jitterFactor = jitterFactor;
+        this.maxFilesPerRun = maxFilesPerRun;
     }
 
     public TranslationOutcome translate(List<TranslationTask> tasks, TranslationMode mode) {
@@ -199,6 +211,15 @@ public class TranslationService {
         // First check if provider returned a retry-after value
         Optional<Duration> providerDelay = extractProviderRetryAfter(throwable);
         if (providerDelay.isPresent()) {
+            Duration baseDelay = providerDelay.get();
+            // If maxFilesPerRun is set (> 0), multiply the delay by that value
+            // This ensures we wait long enough for multiple files to be processed
+            if (maxFilesPerRun > 0) {
+                long multipliedMillis = baseDelay.toMillis() * maxFilesPerRun;
+                LOGGER.debug("Provider requested {}s delay; multiplying by maxFilesPerRun={} to get {}s",
+                        baseDelay.toSeconds(), maxFilesPerRun, multipliedMillis / 1000);
+                return Optional.of(Duration.ofMillis(multipliedMillis));
+            }
             return providerDelay;
         }
 

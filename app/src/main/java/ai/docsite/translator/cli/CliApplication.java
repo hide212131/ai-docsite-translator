@@ -116,7 +116,8 @@ public final class CliApplication {
                 config.llmMaxRetryAttempts(),
                 config.llmInitialBackoffSeconds(),
                 config.llmMaxBackoffSeconds(),
-                config.llmRetryJitterFactor());
+                config.llmRetryJitterFactor(),
+                config.maxFilesPerRun());
     }
 
     private TranslatorFactory buildTranslatorFactory(Config config) {
