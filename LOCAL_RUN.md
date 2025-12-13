@@ -37,3 +37,10 @@ What to expect:
 - If you get quoting errors, ensure the entire `--args` payload is inside one set of double quotes.
 - Do not single-quote `TRANSLATION_BRANCH_TEMPLATE`; use `sync-<upstream-short-sha>` as-is.
 - To target a specific upstream commit, set `TRANSLATION_TARGET_SHA` to the short SHA and rerun.
+
+## Fetching CI job logs with `gh`
+Requires `gh` authenticated for the repo. Replace IDs as needed.
+
+```bash
+GH_FORCE_TTY=0 GH_PAGER=cat gh run view <run-id> --repo <owner>/<repo> --job <job-id> --log > /tmp/ci-job.log
+```
