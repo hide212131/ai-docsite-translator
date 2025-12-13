@@ -85,7 +85,7 @@ public final class CliApplication {
         TranslationTaskPlanner taskPlanner = new TranslationTaskPlanner();
         DocumentWriter documentWriter = new DocumentWriter();
         CommitService commitService = new CommitService();
-        ConflictCleanupService conflictCleanupService = new ConflictCleanupService();
+        ConflictCleanupService conflictCleanupService = new ConflictCleanupService(translationService, config.translationMode());
         AgentFactory agentFactory = new AgentFactory(new SimpleRoutingChatModel(), translationService, pullRequestService,
                 new DefaultLineStructureAnalyzer(), new DefaultLineStructureAdjuster());
         AgentOrchestrator agentOrchestrator = new AgentOrchestrator(agentFactory, translationService, pullRequestService,
