@@ -85,8 +85,11 @@ public class ConflictCleanupService {
                         forced.add(path);
                         LOGGER.warn("Force-staged non-document file with conflict markers intact: {}", path);
                     } else {
-                        remaining.add(path);
-                        LOGGER.warn("Unresolved document conflict (no conflict markers detected): {}", path);
+                        // Document file with no conflict markers detected means it was already resolved by LLM
+                        // Stage it so the commit can proceed
+                        git.add().addFilepattern(path).call();
+                        resolved.add(path);
+                        LOGGER.info("Auto-staged document file (conflict already resolved): {}", path);
                     }
                     continue;
                 }

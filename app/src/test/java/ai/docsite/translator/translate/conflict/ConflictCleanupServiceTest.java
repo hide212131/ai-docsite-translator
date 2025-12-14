@@ -211,6 +211,42 @@ class ConflictCleanupServiceTest {
     }
 
     @Test
+    void autoStagesDocumentFileWithNoConflictMarkers() throws Exception {
+        // This test covers the scenario where a document file was already resolved by the LLM
+        // (conflict markers removed), but git still reports it as conflicting.
+        // The file should be auto-staged and added to resolvedConflicts.
+        
+        ConflictCleanupService service = new ConflictCleanupService();
+
+        // Create a git repository with a conflict
+        Path repoDir = tempDir.resolve("repo");
+        Path conflictedFile = repoDir.resolve("docs/README.md");
+        
+        try (Git git = createGitRepoWithConflict(repoDir, "docs/README.md",
+                List.of("# Title", "HEAD content"),
+                List.of("# Title", "Incoming content"))) {
+
+            // Manually resolve the conflict by replacing the file content (simulating LLM resolution)
+            Files.write(conflictedFile, List.of("# Title", "Resolved content"), StandardCharsets.UTF_8);
+
+            // Call the service
+            ConflictCleanupService.Result result = service.cleanConflicts(repoDir);
+
+            // Verify: Document file with no conflict markers was auto-staged as resolved
+            assertThat(result.resolvedConflicts()).contains("docs/README.md");
+            assertThat(result.forcedMergeConflicts()).isEmpty();
+            assertThat(result.remainingConflicts()).isEmpty();
+
+            // Verify: File content has no conflict markers
+            List<String> resolvedContent = Files.readAllLines(conflictedFile, StandardCharsets.UTF_8);
+            assertThat(resolvedContent).contains("# Title", "Resolved content");
+            assertThat(resolvedContent).doesNotContain("<<<<<<< HEAD");
+            assertThat(resolvedContent).doesNotContain("=======");
+            assertThat(resolvedContent).doesNotContain(">>>>>>>");
+        }
+    }
+
+    @Test
     void handlesMultipleConflictBlocks() throws Exception {
         // Setup: Create a mock TranslationService
         TranslationService mockTranslationService = new TranslationService() {
