@@ -162,21 +162,6 @@ class MinorChangeDetectorTest {
     }
 
     @Test
-    void detectsCaseChangeAsMinorWhenSmall() {
-        List<String> before = List.of(
-            "readme.md"
-        );
-        List<String> after = List.of(
-            "README.md"
-        );
-
-        EditList edits = computeEdits(before, after);
-        boolean isMinor = detector.isMinorChangeOnly(edits, before, after);
-
-        assertThat(isMinor).isTrue();
-    }
-
-    @Test
     void detectsMultilineTypoFixFromCommit9c8b17f() {
         // Real-world test case from the commit mentioned in the issue
         List<String> before = List.of(

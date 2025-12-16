@@ -36,7 +36,8 @@ public class MinorChangeDetector {
 
         for (Edit edit : edits) {
             if (edit.getType() == Edit.Type.DELETE) {
-                // Pure deletions are not necessarily minor, but for files they might be
+                // Deletions count towards total changed characters. Large deletions (e.g., removing sections)
+                // will exceed the thresholds and be treated as substantial changes.
                 int deletedChars = calculateCharsInRange(baseLines, edit.getBeginA(), edit.getEndA());
                 totalChangedChars += deletedChars;
                 continue;
@@ -55,10 +56,11 @@ public class MinorChangeDetector {
                 
                 int editDistance = levenshteinDistance(oldText, newText);
                 
-                // If the edit distance is small relative to the text length, it's likely a minor change
+                // If the edit distance exceeds either the absolute threshold OR the relative threshold,
+                // consider it a substantial change
                 int maxLength = Math.max(oldText.length(), newText.length());
                 
-                if (editDistance > MAX_MINOR_CHANGE_CHARS && editDistance > maxLength * MAX_EDIT_DISTANCE_RATIO_FOR_REPLACE) {
+                if (editDistance > MAX_MINOR_CHANGE_CHARS || editDistance > maxLength * MAX_EDIT_DISTANCE_RATIO_FOR_REPLACE) {
                     // This is a substantial change, not a minor typo
                     return false;
                 }
@@ -72,9 +74,9 @@ public class MinorChangeDetector {
             return totalChangedChars <= MAX_MINOR_CHANGE_CHARS;
         }
         
-        // For larger content, apply both absolute and relative thresholds
+        // For larger content, if either threshold is exceeded, consider it substantial
         if (totalChangedChars > MAX_MINOR_CHANGE_CHARS 
-                && (double) totalChangedChars / totalContentChars > MAX_MINOR_CHANGE_RATIO) {
+                || (double) totalChangedChars / totalContentChars > MAX_MINOR_CHANGE_RATIO) {
             return false;
         }
 
