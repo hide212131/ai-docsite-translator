@@ -52,14 +52,14 @@ class TranslationTaskPlannerTest {
     @Test
     void respectsMaximumFilesPerRun() throws Exception {
         RepoInfo upstream = createRepo(tempDir.resolve("upstream-limit"), "docs/a.md",
-                "Line A\nOld\n");
+                "Line A\nOld content that needs significant updating\n");
         String baseUpstreamSha = upstream.sha();
         try (Git git = Git.open(upstream.path().toFile())) {
             Path fileA = upstream.path().resolve("docs/a.md");
-            Files.writeString(fileA, "Line A\nUpdated\n");
+            Files.writeString(fileA, "Line A\nUpdated with substantially different text that requires translation\n");
             Path fileB = upstream.path().resolve("docs/b.md");
             Files.createDirectories(fileB.getParent());
-            Files.writeString(fileB, "Line B\nNew\n");
+            Files.writeString(fileB, "Line B\nNew content with meaningful changes\n");
             git.add().addFilepattern("docs/a.md").addFilepattern("docs/b.md").call();
             RevCommit commit = git.commit().setMessage("update docs").call();
             upstream.setCommit(commit.getName());
@@ -140,6 +140,46 @@ class TranslationTaskPlannerTest {
 
         assertThat(planResult.tasks()).isEmpty();
         assertThat(planResult.conflictFiles()).containsExactly("docs/conflict.md");
+    }
+
+    @Test
+    void skipsTranslationForTypoFixes() throws Exception {
+        RepoInfo upstream = createRepo(tempDir.resolve("up-typo"), "docs/example.md",
+                "/*Get the list of availabel bootswatch themes*/\n");
+        String baseSha = upstream.sha();
+        upstream.updateFile("docs/example.md",
+                "/*Get the list of available bootswatch themes*/\n");
+        RepoInfo origin = createRepo(tempDir.resolve("origin-typo"), "docs/example.md",
+                "/*ブートスウォッチテーマのリストを取得します（スペル間違い）*/\n");
+
+        DiffMetadata metadata = new DiffMetadata(List.of(new FileChange("docs/example.md", ChangeCategory.DOCUMENT_UPDATED)));
+        GitWorkflowResult result = new GitWorkflowResult(upstream.path(), origin.path(),
+                "sync-" + upstream.shortSha(), upstream.sha(), upstream.shortSha(), baseSha, origin.sha(), metadata, MergeStatus.MERGED);
+
+        TranslationTaskPlanner planner = new TranslationTaskPlanner();
+        List<TranslationTask> tasks = planner.plan(result, 0);
+
+        assertThat(tasks).isEmpty();
+    }
+
+    @Test
+    void includesTranslationForSubstantialChanges() throws Exception {
+        RepoInfo upstream = createRepo(tempDir.resolve("up-substantial"), "docs/example.md",
+                "Original sentence with some content.\n");
+        String baseSha = upstream.sha();
+        upstream.updateFile("docs/example.md",
+                "Completely rewritten sentence with different meaning and new information.\n");
+        RepoInfo origin = createRepo(tempDir.resolve("origin-substantial"), "docs/example.md",
+                "元の文章です。\n");
+
+        DiffMetadata metadata = new DiffMetadata(List.of(new FileChange("docs/example.md", ChangeCategory.DOCUMENT_UPDATED)));
+        GitWorkflowResult result = new GitWorkflowResult(upstream.path(), origin.path(),
+                "sync-" + upstream.shortSha(), upstream.sha(), upstream.shortSha(), baseSha, origin.sha(), metadata, MergeStatus.MERGED);
+
+        TranslationTaskPlanner planner = new TranslationTaskPlanner();
+        List<TranslationTask> tasks = planner.plan(result, 0);
+
+        assertThat(tasks).hasSize(1);
     }
 
     private RepoInfo createRepo(Path directory, String filePath, String content) throws Exception {

@@ -3,6 +3,7 @@ package ai.docsite.translator.translate;
 import ai.docsite.translator.diff.ChangeCategory;
 import ai.docsite.translator.diff.DiffMetadata;
 import ai.docsite.translator.diff.FileChange;
+import ai.docsite.translator.diff.MinorChangeDetector;
 import ai.docsite.translator.git.GitWorkflowResult;
 import ai.docsite.translator.translate.conflict.ConflictDetector;
 import java.io.BufferedReader;
@@ -41,7 +42,14 @@ public class TranslationTaskPlanner {
     private static final Logger LOGGER = LoggerFactory.getLogger(TranslationTaskPlanner.class);
     private static final int MAX_SEGMENT_LINES = 120;
 
+    private final MinorChangeDetector minorChangeDetector;
+
     public TranslationTaskPlanner() {
+        this(new MinorChangeDetector());
+    }
+
+    TranslationTaskPlanner(MinorChangeDetector minorChangeDetector) {
+        this.minorChangeDetector = minorChangeDetector;
     }
 
     public PlanResult planWithDiagnostics(GitWorkflowResult workflowResult, int maxFilesPerRun) {
@@ -117,6 +125,13 @@ public class TranslationTaskPlanner {
                                          List<String> existingTranslationLines,
                                          List<String> newSourceLines) {
         EditList edits = computeEdits(baseSourceLines, newSourceLines);
+        
+        // Check if changes are minor (typo-level) and skip translation if so
+        if (minorChangeDetector.isMinorChangeOnly(edits, baseSourceLines, newSourceLines)) {
+            LOGGER.info("Skipping translation for {} due to minor changes only (typo/spelling fix)", filePath);
+            return null;
+        }
+        
         List<TranslationSegment> segments = segmentsFromEdits(edits);
         if (segments.isEmpty()) {
             return null;
