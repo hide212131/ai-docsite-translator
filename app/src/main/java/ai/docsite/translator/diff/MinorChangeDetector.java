@@ -13,6 +13,7 @@ public class MinorChangeDetector {
     private static final int MAX_MINOR_CHANGE_CHARS = 15;
     private static final double MAX_MINOR_CHANGE_RATIO = 0.10; // 10% of total content
     private static final int MIN_CONTENT_SIZE_FOR_RATIO = 200; // Only apply ratio check for larger content
+    private static final double MAX_EDIT_DISTANCE_RATIO_FOR_REPLACE = 0.2; // 20% edit distance threshold for replacements
 
     public MinorChangeDetector() {
     }
@@ -57,7 +58,7 @@ public class MinorChangeDetector {
                 // If the edit distance is small relative to the text length, it's likely a minor change
                 int maxLength = Math.max(oldText.length(), newText.length());
                 
-                if (editDistance > MAX_MINOR_CHANGE_CHARS && editDistance > maxLength * 0.2) {
+                if (editDistance > MAX_MINOR_CHANGE_CHARS && editDistance > maxLength * MAX_EDIT_DISTANCE_RATIO_FOR_REPLACE) {
                     // This is a substantial change, not a minor typo
                     return false;
                 }

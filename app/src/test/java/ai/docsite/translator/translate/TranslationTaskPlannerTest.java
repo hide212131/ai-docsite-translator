@@ -51,6 +51,7 @@ class TranslationTaskPlannerTest {
 
     @Test
     void respectsMaximumFilesPerRun() throws Exception {
+        // Use substantial content changes to avoid triggering minor change detection
         RepoInfo upstream = createRepo(tempDir.resolve("upstream-limit"), "docs/a.md",
                 "Line A\nOld content that needs significant updating\n");
         String baseUpstreamSha = upstream.sha();
