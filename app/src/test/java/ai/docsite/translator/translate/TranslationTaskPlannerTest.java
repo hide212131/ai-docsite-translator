@@ -182,6 +182,62 @@ class TranslationTaskPlannerTest {
         assertThat(tasks).hasSize(1);
     }
 
+    @Test
+    void skipsTranslationForCommit9c8b17fTypoFixes() throws Exception {
+        // Test with actual content from commit 9c8b17f which fixes typos:
+        // - "availabel" -> "available"
+        // - "dependency-vulnerabities-check" -> "dependency-vulnerabilities-check"
+        
+        // Create upstream with both files in initial state
+        Path upstreamPath = tempDir.resolve("up-9c8b17f");
+        Files.createDirectories(upstreamPath);
+        try (Git git = Git.init().setDirectory(upstreamPath.toFile()).call()) {
+            configureUser(git);
+            
+            Path tipsFile = upstreamPath.resolve("docs/tips.mdx");
+            Files.createDirectories(tipsFile.getParent());
+            Files.writeString(tipsFile, readFixture("commit-9c8b17f/before-tips.mdx"));
+            
+            Path vulnFile = upstreamPath.resolve("docs/vulnerabilities.mdx");
+            Files.writeString(vulnFile, readFixture("commit-9c8b17f/before-vulnerabilities.mdx"));
+            
+            git.add().addFilepattern("docs/tips.mdx").addFilepattern("docs/vulnerabilities.mdx").call();
+            RevCommit baseCommit = git.commit().setMessage("base").call();
+            String baseSha = baseCommit.getName();
+            
+            // Update both files with typo fixes
+            Files.writeString(tipsFile, readFixture("commit-9c8b17f/after-tips.mdx"));
+            Files.writeString(vulnFile, readFixture("commit-9c8b17f/after-vulnerabilities.mdx"));
+            
+            git.add().addFilepattern("docs/tips.mdx").addFilepattern("docs/vulnerabilities.mdx").call();
+            RevCommit headCommit = git.commit().setMessage("Rename page and fix typo").call();
+            String headSha = headCommit.getName();
+            
+            // Create origin with translations
+            RepoInfo origin = createRepo(tempDir.resolve("origin-9c8b17f"), "docs/tips.mdx",
+                    "/*ブートスウォッチテーマのリストを取得します（スペル間違い）*/\n");
+            appendFile(origin, "docs/vulnerabilities.mdx", 
+                    "---\ntitle: 依存関係の脆弱性チェック\nslug: /dependency-vulnerabities-check/\n---\n");
+
+            DiffMetadata metadata = new DiffMetadata(List.of(
+                    new FileChange("docs/tips.mdx", ChangeCategory.DOCUMENT_UPDATED),
+                    new FileChange("docs/vulnerabilities.mdx", ChangeCategory.DOCUMENT_UPDATED)));
+            GitWorkflowResult result = new GitWorkflowResult(upstreamPath, origin.path(),
+                    "sync-9c8b17f", headSha, "9c8b17f", baseSha, origin.sha(), metadata, MergeStatus.MERGED);
+
+            TranslationTaskPlanner planner = new TranslationTaskPlanner();
+            List<TranslationTask> tasks = planner.plan(result, 0);
+
+            // Both files should be skipped because they only contain typo fixes
+            assertThat(tasks).isEmpty();
+        }
+    }
+
+    private String readFixture(String relativePath) throws IOException {
+        Path fixturePath = Path.of("src/test/resources/fixtures").resolve(relativePath);
+        return Files.readString(fixturePath);
+    }
+
     private RepoInfo createRepo(Path directory, String filePath, String content) throws Exception {
         Files.createDirectories(directory);
         try (Git git = Git.init().setDirectory(directory.toFile()).call()) {
