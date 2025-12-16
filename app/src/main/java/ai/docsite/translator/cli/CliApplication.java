@@ -80,9 +80,10 @@ public final class CliApplication {
         LOGGER.info("Running in {} mode (dryRun={}): upstream={} origin={}",
                 config.mode(), config.dryRun(), config.upstreamUrl(), config.originUrl());
 
-        TranslationService translationService = createTranslationService(config);
+        dev.langchain4j.model.chat.ChatModel chatModel = createChatModel(config);
+        TranslationService translationService = createTranslationService(config, chatModel);
         PullRequestService pullRequestService = new PullRequestService(new PullRequestComposer());
-        TranslationTaskPlanner taskPlanner = new TranslationTaskPlanner();
+        TranslationTaskPlanner taskPlanner = new TranslationTaskPlanner(chatModel, config.translationMode());
         DocumentWriter documentWriter = new DocumentWriter();
         CommitService commitService = new CommitService();
         ConflictCleanupService conflictCleanupService = new ConflictCleanupService(translationService, config.translationMode());
@@ -109,8 +110,16 @@ public final class CliApplication {
         return 0;
     }
 
-    private TranslationService createTranslationService(Config config) {
-        TranslatorFactory factory = buildTranslatorFactory(config);
+    private dev.langchain4j.model.chat.ChatModel createChatModel(Config config) {
+        TranslatorConfig translatorConfig = config.translatorConfig();
+        return switch (translatorConfig.provider()) {
+            case OLLAMA -> createOllamaChatModel(translatorConfig);
+            case GEMINI -> createGeminiChatModel(translatorConfig, config.secrets());
+        };
+    }
+
+    private TranslationService createTranslationService(Config config, dev.langchain4j.model.chat.ChatModel chatModel) {
+        TranslatorFactory factory = buildTranslatorFactory(chatModel, config);
         LineStructureFormatter formatter = new LineStructureFormatter(new DefaultLineStructureAnalyzer(), new DefaultLineStructureAdjuster());
         return new TranslationService(factory, formatter,
                 config.llmMaxRetryAttempts(),
@@ -120,59 +129,48 @@ public final class CliApplication {
                 config.maxFilesPerRun());
     }
 
-    private TranslatorFactory buildTranslatorFactory(Config config) {
-        Translator productionTranslator = createProductionTranslator(config);
+    private TranslatorFactory buildTranslatorFactory(dev.langchain4j.model.chat.ChatModel chatModel, Config config) {
+        Translator productionTranslator = createProductionTranslator(chatModel, config);
         Translator dryRunTranslator = new PassThroughTranslator();
         Translator mockTranslator = new MockTranslator();
         return new TranslatorFactory(productionTranslator, dryRunTranslator, mockTranslator);
     }
 
-    private Translator createProductionTranslator(Config config) {
+    private Translator createProductionTranslator(dev.langchain4j.model.chat.ChatModel chatModel, Config config) {
         TranslatorConfig translatorConfig = config.translatorConfig();
-        return switch (translatorConfig.provider()) {
-            case OLLAMA -> createOllamaTranslator(translatorConfig);
-            case GEMINI -> createGeminiTranslator(translatorConfig, config.secrets());
-        };
+        return new ChatModelTranslator(chatModel, translatorConfig.provider().name(), translatorConfig.modelName());
     }
 
-    private Translator createOllamaTranslator(TranslatorConfig translatorConfig) {
+    private dev.langchain4j.model.chat.ChatModel createOllamaChatModel(TranslatorConfig translatorConfig) {
         try {
             String baseUrl = translatorConfig.baseUrl()
                     .orElseThrow(() -> new IllegalStateException("OLLAMA_BASE_URL must be configured when LLM_PROVIDER=ollama"));
             LOGGER.info("Using Ollama model '{}' via {}", translatorConfig.modelName(), baseUrl);
-            return new ChatModelTranslator(
-                    OllamaChatModel.builder()
-                            .baseUrl(baseUrl)
-                            .modelName(translatorConfig.modelName())
-                            .temperature(0.1)
-                            .timeout(Duration.ofMinutes(2))
-                            .build(),
-                    "Ollama",
-                    translatorConfig.modelName()
-            );
+            return OllamaChatModel.builder()
+                    .baseUrl(baseUrl)
+                    .modelName(translatorConfig.modelName())
+                    .temperature(0.1)
+                    .timeout(Duration.ofMinutes(2))
+                    .build();
         } catch (RuntimeException ex) {
-            throw new IllegalStateException("Failed to initialize Ollama translator", ex);
+            throw new IllegalStateException("Failed to initialize Ollama chat model", ex);
         }
     }
 
-    private Translator createGeminiTranslator(TranslatorConfig translatorConfig, Secrets secrets) {
+    private dev.langchain4j.model.chat.ChatModel createGeminiChatModel(TranslatorConfig translatorConfig, Secrets secrets) {
         String apiKey = secrets.geminiApiKey()
                 .filter(value -> !value.isBlank())
                 .orElseThrow(() -> new IllegalStateException("GEMINI_API_KEY must be provided when LLM_PROVIDER=gemini"));
         try {
             LOGGER.info("Using Gemini model '{}'", translatorConfig.modelName());
-            return new ChatModelTranslator(
-                    GoogleAiGeminiChatModel.builder()
-                            .apiKey(apiKey)
-                            .modelName(translatorConfig.modelName())
-                            .temperature(0.1)
-                            .timeout(Duration.ofMinutes(2))
-                            .build(),
-                    "Gemini",
-                    translatorConfig.modelName()
-            );
+            return GoogleAiGeminiChatModel.builder()
+                    .apiKey(apiKey)
+                    .modelName(translatorConfig.modelName())
+                    .temperature(0.1)
+                    .timeout(Duration.ofMinutes(2))
+                    .build();
         } catch (RuntimeException ex) {
-            throw new IllegalStateException("Failed to initialize Gemini translator", ex);
+            throw new IllegalStateException("Failed to initialize Gemini chat model", ex);
         }
     }
 }

@@ -66,6 +66,7 @@ Rules:
 - For lines formatted as `<key>: <value>` inside YAML front matter, keep `<key>` exactly as it appears (case-sensitive) and translate only `<value>` after the colon.
 - Keep the exact number of lines as the input. If you need additional spacing, insert blank lines without removing existing ones.
 - Do not add, remove, or rename code fence markers. Only translate the text inside them when appropriate, and ensure the number of lines containing only "```" matches the input exactly.
+- **IMPORTANT: For minor changes like typo fixes, spelling corrections, or punctuation adjustments, keep them as-is in English. Only translate substantial content changes that affect meaning.**
 - Output only the translated markdown as plain text. Do not wrap the result in code fences, do not add commentary, and do not ask for additional input—the document is already provided.
 
 <markdown>

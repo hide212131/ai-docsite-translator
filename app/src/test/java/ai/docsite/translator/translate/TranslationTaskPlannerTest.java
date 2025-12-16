@@ -51,16 +51,15 @@ class TranslationTaskPlannerTest {
 
     @Test
     void respectsMaximumFilesPerRun() throws Exception {
-        // Use substantial content changes to avoid triggering minor change detection
         RepoInfo upstream = createRepo(tempDir.resolve("upstream-limit"), "docs/a.md",
-                "Line A\nOld content that needs significant updating\n");
+                "Line A\nOld\n");
         String baseUpstreamSha = upstream.sha();
         try (Git git = Git.open(upstream.path().toFile())) {
             Path fileA = upstream.path().resolve("docs/a.md");
-            Files.writeString(fileA, "Line A\nUpdated with substantially different text that requires translation\n");
+            Files.writeString(fileA, "Line A\nUpdated\n");
             Path fileB = upstream.path().resolve("docs/b.md");
             Files.createDirectories(fileB.getParent());
-            Files.writeString(fileB, "Line B\nNew content with meaningful changes\n");
+            Files.writeString(fileB, "Line B\nNew\n");
             git.add().addFilepattern("docs/a.md").addFilepattern("docs/b.md").call();
             RevCommit commit = git.commit().setMessage("update docs").call();
             upstream.setCommit(commit.getName());
@@ -141,102 +140,6 @@ class TranslationTaskPlannerTest {
 
         assertThat(planResult.tasks()).isEmpty();
         assertThat(planResult.conflictFiles()).containsExactly("docs/conflict.md");
-    }
-
-    @Test
-    void skipsTranslationForTypoFixes() throws Exception {
-        RepoInfo upstream = createRepo(tempDir.resolve("up-typo"), "docs/example.md",
-                "/*Get the list of availabel bootswatch themes*/\n");
-        String baseSha = upstream.sha();
-        upstream.updateFile("docs/example.md",
-                "/*Get the list of available bootswatch themes*/\n");
-        RepoInfo origin = createRepo(tempDir.resolve("origin-typo"), "docs/example.md",
-                "/*ブートスウォッチテーマのリストを取得します（スペル間違い）*/\n");
-
-        DiffMetadata metadata = new DiffMetadata(List.of(new FileChange("docs/example.md", ChangeCategory.DOCUMENT_UPDATED)));
-        GitWorkflowResult result = new GitWorkflowResult(upstream.path(), origin.path(),
-                "sync-" + upstream.shortSha(), upstream.sha(), upstream.shortSha(), baseSha, origin.sha(), metadata, MergeStatus.MERGED);
-
-        TranslationTaskPlanner planner = new TranslationTaskPlanner();
-        List<TranslationTask> tasks = planner.plan(result, 0);
-
-        assertThat(tasks).isEmpty();
-    }
-
-    @Test
-    void includesTranslationForSubstantialChanges() throws Exception {
-        RepoInfo upstream = createRepo(tempDir.resolve("up-substantial"), "docs/example.md",
-                "Original sentence with some content.\n");
-        String baseSha = upstream.sha();
-        upstream.updateFile("docs/example.md",
-                "Completely rewritten sentence with different meaning and new information.\n");
-        RepoInfo origin = createRepo(tempDir.resolve("origin-substantial"), "docs/example.md",
-                "元の文章です。\n");
-
-        DiffMetadata metadata = new DiffMetadata(List.of(new FileChange("docs/example.md", ChangeCategory.DOCUMENT_UPDATED)));
-        GitWorkflowResult result = new GitWorkflowResult(upstream.path(), origin.path(),
-                "sync-" + upstream.shortSha(), upstream.sha(), upstream.shortSha(), baseSha, origin.sha(), metadata, MergeStatus.MERGED);
-
-        TranslationTaskPlanner planner = new TranslationTaskPlanner();
-        List<TranslationTask> tasks = planner.plan(result, 0);
-
-        assertThat(tasks).hasSize(1);
-    }
-
-    @Test
-    void skipsTranslationForCommit9c8b17fTypoFixes() throws Exception {
-        // Test with actual content from commit 9c8b17f which fixes typos:
-        // - "availabel" -> "available"
-        // - "dependency-vulnerabities-check" -> "dependency-vulnerabilities-check"
-        
-        // Create upstream with both files in initial state
-        Path upstreamPath = tempDir.resolve("up-9c8b17f");
-        Files.createDirectories(upstreamPath);
-        try (Git git = Git.init().setDirectory(upstreamPath.toFile()).call()) {
-            configureUser(git);
-            
-            Path tipsFile = upstreamPath.resolve("docs/tips.mdx");
-            Files.createDirectories(tipsFile.getParent());
-            Files.writeString(tipsFile, readFixture("commit-9c8b17f/before-tips.mdx"));
-            
-            Path vulnFile = upstreamPath.resolve("docs/vulnerabilities.mdx");
-            Files.writeString(vulnFile, readFixture("commit-9c8b17f/before-vulnerabilities.mdx"));
-            
-            git.add().addFilepattern("docs/tips.mdx").addFilepattern("docs/vulnerabilities.mdx").call();
-            RevCommit baseCommit = git.commit().setMessage("base").call();
-            String baseSha = baseCommit.getName();
-            
-            // Update both files with typo fixes
-            Files.writeString(tipsFile, readFixture("commit-9c8b17f/after-tips.mdx"));
-            Files.writeString(vulnFile, readFixture("commit-9c8b17f/after-vulnerabilities.mdx"));
-            
-            git.add().addFilepattern("docs/tips.mdx").addFilepattern("docs/vulnerabilities.mdx").call();
-            RevCommit headCommit = git.commit().setMessage("Rename page and fix typo").call();
-            String headSha = headCommit.getName();
-            
-            // Create origin with translations
-            RepoInfo origin = createRepo(tempDir.resolve("origin-9c8b17f"), "docs/tips.mdx",
-                    "/*ブートスウォッチテーマのリストを取得します（スペル間違い）*/\n");
-            appendFile(origin, "docs/vulnerabilities.mdx", 
-                    "---\ntitle: 依存関係の脆弱性チェック\nslug: /dependency-vulnerabities-check/\n---\n");
-
-            DiffMetadata metadata = new DiffMetadata(List.of(
-                    new FileChange("docs/tips.mdx", ChangeCategory.DOCUMENT_UPDATED),
-                    new FileChange("docs/vulnerabilities.mdx", ChangeCategory.DOCUMENT_UPDATED)));
-            GitWorkflowResult result = new GitWorkflowResult(upstreamPath, origin.path(),
-                    "sync-9c8b17f", headSha, "9c8b17f", baseSha, origin.sha(), metadata, MergeStatus.MERGED);
-
-            TranslationTaskPlanner planner = new TranslationTaskPlanner();
-            List<TranslationTask> tasks = planner.plan(result, 0);
-
-            // Both files should be skipped because they only contain typo fixes
-            assertThat(tasks).isEmpty();
-        }
-    }
-
-    private String readFixture(String relativePath) throws IOException {
-        Path fixturePath = Path.of("src/test/resources/fixtures").resolve(relativePath);
-        return Files.readString(fixturePath);
     }
 
     private RepoInfo createRepo(Path directory, String filePath, String content) throws Exception {
