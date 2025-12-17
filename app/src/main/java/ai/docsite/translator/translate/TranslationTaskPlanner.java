@@ -41,7 +41,16 @@ public class TranslationTaskPlanner {
     private static final Logger LOGGER = LoggerFactory.getLogger(TranslationTaskPlanner.class);
     private static final int MAX_SEGMENT_LINES = 120;
 
+    private final TranslationDecisionService decisionService;
+    private final TranslationMode translationMode;
+
     public TranslationTaskPlanner() {
+        this(null, TranslationMode.PRODUCTION);
+    }
+
+    public TranslationTaskPlanner(dev.langchain4j.model.chat.ChatModel chatModel, TranslationMode translationMode) {
+        this.decisionService = chatModel != null ? new TranslationDecisionService(chatModel) : null;
+        this.translationMode = translationMode;
     }
 
     public PlanResult planWithDiagnostics(GitWorkflowResult workflowResult, int maxFilesPerRun) {
@@ -98,6 +107,17 @@ public class TranslationTaskPlanner {
             } catch (IOException ex) {
                 LOGGER.warn("Failed to read existing translation for {}: {}", change.path(), ex.getMessage());
                 existingTranslationLines = List.of();
+            }
+
+            // Use LLM to decide if translation is needed (if in production mode and decision service available)
+            boolean shouldTranslate = true;
+            if (decisionService != null && translationMode == TranslationMode.PRODUCTION) {
+                shouldTranslate = decisionService.shouldTranslate(change.path(), baseSourceLines, upstreamLines);
+            }
+
+            if (!shouldTranslate) {
+                LOGGER.info("Skipping translation for {} based on LLM decision", change.path());
+                continue;
             }
 
             TranslationTask task = planFromDiff(change.path(), baseSourceLines, existingTranslationLines, upstreamLines);
